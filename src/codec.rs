@@ -2,6 +2,7 @@ use crate::AVCodecId;
 use crate::error::{FFmpegError, Result};
 use crate::frame::Frame;
 use crate::packet::Packet;
+use crate::AVDiscard;
 use libavcodec_sys as sys;
 use std::ptr;
 
@@ -55,6 +56,12 @@ impl CodecContext {
 
     pub fn pix_fmt(&self) -> i32 {
         unsafe { (*self.inner).pix_fmt }
+    }
+
+    pub fn set_skip_frame(&mut self, value: AVDiscard) {
+        unsafe {
+            (*self.inner).skip_frame = value as i32;
+        }
     }
 
     pub fn open(&mut self, codec: &Codec) -> Result<()> {

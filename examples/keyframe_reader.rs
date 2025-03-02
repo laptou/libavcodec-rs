@@ -29,6 +29,10 @@ fn main() -> anyhow::Result<()> {
     // Create and configure decoder context
     let mut codec_ctx = CodecContext::new(&decoder)?;
     video_stream.apply_parameters_to_context(&mut codec_ctx)?;
+    
+    // Set decoder to skip non-keyframes
+    codec_ctx.set_skip_frame(AVDiscard::NonKey);
+    
     codec_ctx.open(&decoder)?;
 
     // Allocate frames
@@ -48,20 +52,14 @@ fn main() -> anyhow::Result<()> {
             loop {
                 match codec_ctx.receive_frame(&mut frame) {
                     Ok(()) => {
-                        // Check if this is a keyframe
-                        if frame.is_key_frame() {
-                            // Get PTS and convert to seconds
-                            let pts = frame.pts();
-                            let pts_time = pts as f64 * time_base.as_f64();
-                            
-                            println!("Keyframe PTS: {} ({:.3} seconds)", pts, pts_time);
-                            
-                            // Here you can process the keyframe data
-                            // frame.data(0) contains Y plane
-                            // frame.data(1) contains U plane
-                            // frame.data(2) contains V plane
-                            process_keyframe(&frame);
-                        }
+                        // Since we set skip_frame to NonKey, we know this is a keyframe
+                        let pts = frame.pts();
+                        let pts_time = pts as f64 * time_base.as_f64();
+                        
+                        println!("Keyframe PTS: {} ({:.3} seconds)", pts, pts_time);
+                        
+                        // Process the keyframe data
+                        process_keyframe(&frame);
                     }
                     Err(FFmpegError { code: EAGAIN, .. }) => break,
                     Err(e) => return Err(e.into()),
