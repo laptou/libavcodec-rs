@@ -1,0 +1,10 @@
+[workspace]
+members = ["sys"]
+
+[package]
+name = "libavcodec"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libavcodec-sys = { path = "sys" }
