@@ -10,3 +10,6 @@ edition = "2024"
 libavcodec-sys = { path = "sys" }
 num-derive = "0.4.2"
 num-traits = "0.2.19"
+
+[dev-dependencies]
+anyhow = "1.0.96"

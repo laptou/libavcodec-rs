@@ -872,7 +872,7 @@ pub enum AVFrameSideDataType {
 }
 
 #[repr(i32)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum AVMediaType {
     /// Opaque data information usually sparse
     Attachment = AVMediaType_AVMEDIA_TYPE_ATTACHMENT,

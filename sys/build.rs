@@ -11,8 +11,11 @@ fn main() {
     println!("cargo:rustc-link-search={}", ffmpeg_lib.display());
     println!("cargo:rustc-link-search={}", ffmpeg_bin.display());
 
-    println!("cargo:rustc-link-lib=avcodec-61");
-    println!("cargo:rustc-link-lib=avutil-59");
+    println!("cargo:rustc-link-lib=avcodec");
+    println!("cargo:rustc-link-lib=avutil");
+    println!("cargo:rustc-link-lib=avformat");
+    println!("cargo:rustc-link-lib=swresample");
+    println!("cargo:rustc-link-lib=swscale");
 
     let bindings = bindgen::Builder::default()
         .header("wrapper.h")

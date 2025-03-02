@@ -12,9 +12,11 @@ impl Rational {
         }
     }
 
-    // pub fn as_f64(&self) -> f64 {
-    //     unsafe { sys::av_q2d(self.inner) }
-    // }
+    pub fn as_f64(&self) -> f64 {
+        // AVRational has q2d method that is supposed to handle this, but
+        // bindgen won't import it for some reason
+        self.inner.num as f64 / self.inner.den as f64
+    }
 
     pub fn num(&self) -> i32 {
         self.inner.num

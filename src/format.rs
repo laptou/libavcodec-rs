@@ -1,4 +1,4 @@
-use crate::AVCodecId;
+use crate::{AVCodecId, AVMediaType};
 use crate::codec::CodecContext;
 use crate::error::{FFmpegError, Result};
 use crate::packet::Packet;
@@ -95,8 +95,8 @@ impl Stream {
         unsafe { (*self.inner).time_base.into() }
     }
 
-    pub fn codec_type(&self) -> sys::AVMediaType {
-        unsafe { (*(*self.inner).codecpar).codec_type }
+    pub fn codec_type(&self) -> AVMediaType {
+        AVMediaType::from_i32(unsafe { (*(*self.inner).codecpar).codec_type }).unwrap()
     }
 
     pub fn codec_id(&self) -> AVCodecId {
