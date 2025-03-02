@@ -1,4 +1,5 @@
 use libavcodec_sys::*;
+use num_derive::FromPrimitive;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
@@ -105,8 +106,8 @@ pub enum AVClassCategory {
     Swscaler = AVClassCategory_AV_CLASS_CATEGORY_SWSCALER,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 pub enum AVCodecId {
     _012v = AVCodecID_AV_CODEC_ID_012V,
     _4Gv = AVCodecID_AV_CODEC_ID_4GV,
@@ -1544,3 +1545,6 @@ pub enum AVSampleFormat {
     /// unsigned 8 bits, planar
     U8p = AVSampleFormat_AV_SAMPLE_FMT_U8P,
 }
+
+
+pub const EAGAIN: i32 = -11;
