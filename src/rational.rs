@@ -35,4 +35,4 @@ impl Into<sys::AVRational> for Rational {
     fn into(self) -> sys::AVRational {
         self.inner
     }
-} 
+}

@@ -1,7 +1,7 @@
+use crate::AVCodecId;
 use crate::error::{FFmpegError, Result};
 use crate::frame::Frame;
 use crate::packet::Packet;
-use crate::AVCodecId;
 use libavcodec_sys as sys;
 use std::ptr;
 
@@ -91,4 +91,4 @@ impl Drop for CodecContext {
             sys::avcodec_free_context(&mut self.inner);
         }
     }
-} 
+}

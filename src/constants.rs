@@ -1546,5 +1546,4 @@ pub enum AVSampleFormat {
     U8p = AVSampleFormat_AV_SAMPLE_FMT_U8P,
 }
 
-
 pub const EAGAIN: i32 = -11;

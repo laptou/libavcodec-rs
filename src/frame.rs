@@ -1,6 +1,5 @@
 use crate::error::{FFmpegError, Result};
 use libavcodec_sys as sys;
-use std::ptr;
 use std::slice;
 
 pub struct Frame {
@@ -69,4 +68,4 @@ impl Drop for Frame {
             sys::av_frame_free(&mut self.inner);
         }
     }
-} 
+}

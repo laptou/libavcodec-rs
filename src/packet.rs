@@ -1,6 +1,5 @@
 use crate::error::{FFmpegError, Result};
 use libavcodec_sys as sys;
-use std::ptr;
 
 pub struct Packet {
     inner: *mut sys::AVPacket,
@@ -46,4 +45,4 @@ impl Drop for Packet {
             sys::av_packet_free(&mut self.inner);
         }
     }
-} 
+}

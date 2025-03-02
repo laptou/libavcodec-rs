@@ -66,4 +66,4 @@ impl Drop for SwsContext {
             sys::sws_freeContext(self.inner);
         }
     }
-} 
+}
