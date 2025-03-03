@@ -3,13 +3,22 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-env-changed=FFMPEG_ROOT");
-    let ffmpeg_root = PathBuf::from(env::var("FFMPEG_ROOT").unwrap());
-    let ffmpeg_include = ffmpeg_root.join("include");
-    let ffmpeg_lib = ffmpeg_root.join("lib");
-    let ffmpeg_bin = ffmpeg_root.join("bin");
 
-    println!("cargo:rustc-link-search={}", ffmpeg_lib.display());
-    println!("cargo:rustc-link-search={}", ffmpeg_bin.display());
+    let (include_paths, lib_paths) = if let Some(ffmpeg_root) = env::var("FFMPEG_ROOT").ok() {
+        let ffmpeg_root = PathBuf::from(ffmpeg_root);
+        (
+            vec![ffmpeg_root.join("include")],
+            vec![ffmpeg_root.join("lib")],
+        )
+    } else {
+        let lib = pkg_config::probe_library("libavcodec")
+            .expect("could not find libavcodec using pkg-config, please set FFMPEG_ROOT env var");
+        (lib.include_paths, lib.link_paths)
+    };
+
+    for lib_path in lib_paths {
+        println!("cargo:rustc-link-search={}", lib_path.display());
+    }
 
     println!("cargo:rustc-link-lib=avcodec");
     println!("cargo:rustc-link-lib=avutil");
@@ -17,7 +26,7 @@ fn main() {
     println!("cargo:rustc-link-lib=swresample");
     println!("cargo:rustc-link-lib=swscale");
 
-    let bindings = bindgen::Builder::default()
+    let mut builder = bindgen::Builder::default()
         .header("wrapper.h")
         .allowlist_type("AVCodec")
         .allowlist_type("AVCodecContext")
@@ -42,8 +51,13 @@ fn main() {
         .allowlist_function("avutil_.*")
         .allowlist_function("avfilter_.*")
         .allowlist_function("avdevice_.*")
-        .allowlist_function("avresample_*")
-        .clang_arg(format!("-I{}", ffmpeg_include.display()))
+        .allowlist_function("avresample_*");
+
+    for include_path in include_paths {
+        builder = builder.clang_arg(format!("-I{}", include_path.display()));
+    }
+
+    let bindings = builder
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .expect("unable to generate bindings");
