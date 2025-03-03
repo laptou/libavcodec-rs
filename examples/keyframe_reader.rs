@@ -1,10 +1,9 @@
 use anyhow::Result;
-use image::{ImageBuffer, Rgb};
+use image::Rgb;
 use libavcodec::{
     AVDiscard, AVMediaType, AVPixelFormat, Codec, CodecContext, FormatContext, Frame, Packet,
     SwsContext,
 };
-use libavcodec_sys;
 use std::fs;
 use std::path::Path;
 

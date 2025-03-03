@@ -1,8 +1,8 @@
-use crate::{AVCodecId, AVMediaType};
 use crate::codec::CodecContext;
 use crate::error::{FFmpegError, Result};
 use crate::packet::Packet;
 use crate::rational::Rational;
+use crate::{AVCodecId, AVMediaType};
 use libavcodec_sys as sys;
 use num_traits::FromPrimitive;
 use std::ffi::CString;

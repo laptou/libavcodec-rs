@@ -1,6 +1,6 @@
+use crate::AVPixelFormat;
 use crate::error::{FFmpegError, Result};
 use crate::frame::Frame;
-use crate::AVPixelFormat;
 use libavcodec_sys as sys;
 use std::ptr;
 
@@ -67,4 +67,4 @@ impl Drop for SwsContext {
             sys::sws_freeContext(self.inner);
         }
     }
-} 
+}
