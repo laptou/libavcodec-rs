@@ -117,28 +117,12 @@ impl Frame {
         self.inner.as_ptr()
     }
 
-    fn inner(&self) -> &sys::AVFrame {
+    pub fn inner(&self) -> &sys::AVFrame {
         unsafe { self.inner.as_ref() }
     }
 
-    fn inner_mut(&mut self) -> &mut sys::AVFrame {
+    pub fn inner_mut(&mut self) -> &mut sys::AVFrame {
         unsafe { self.inner.as_mut() }
-    }
-
-    pub fn is_key_frame(&self) -> bool {
-        self.inner().key_frame != 0
-    }
-
-    pub fn pts(&self) -> i64 {
-        self.inner().pts
-    }
-
-    pub fn width(&self) -> i32 {
-        self.inner().width
-    }
-
-    pub fn height(&self) -> i32 {
-        self.inner().height
     }
 
     pub fn data(&self, plane: usize) -> Option<&[u8]> {
@@ -193,6 +177,30 @@ impl Frame {
 
     pub fn data_line_sizes(&self) -> &[i32] {
         &self.inner().linesize
+    }
+
+    pub fn is_key_frame(&self) -> bool {
+        self.inner().key_frame != 0
+    }
+
+    pub fn pts(&self) -> i64 {
+        self.inner().pts
+    }
+
+    pub fn pkt_dts(&self) -> i64 {
+        self.inner().pkt_dts
+    }
+
+    pub fn best_effort_timestamp(&self) -> i64 {
+        self.inner().best_effort_timestamp
+    }
+
+    pub fn width(&self) -> i32 {
+        self.inner().width
+    }
+
+    pub fn height(&self) -> i32 {
+        self.inner().height
     }
 }
 
