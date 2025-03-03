@@ -1,45 +1,84 @@
-use anyhow::Context;
-use libavcodec::*;
-use std::env;
+use anyhow::Result;
+use image::{ImageBuffer, Rgb};
+use libavcodec::{
+    AVDiscard, AVMediaType, AVPixelFormat, Codec, CodecContext, FormatContext, Frame, Packet,
+    SwsContext,
+};
+use libavcodec_sys;
+use std::fs;
 use std::path::Path;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
     // Check command line arguments
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: {} <input_file>", args[0]);
-        return Ok(());
-    }
+    // let args: Vec<String> = std::env::args().collect();
+    // if args.len() != 2 {
+    //     eprintln!("Usage: {} <input_video>", args[0]);
+    //     std::process::exit(1);
+    // }
 
-    let input_file = Path::new(&args[1]);
-    
-    // Open input file and find stream info
-    let mut format_ctx = FormatContext::open(input_file)?;
-    
-    // Find the first video stream
+    // let input_file = args[1].clone();
+    let input_file = "C:\\Users\\ibiyemi\\Videos\\nokia.mov";
+
+    // Create output directory
+    let output_dir = Path::new("keyframes");
+    fs::create_dir_all(&output_dir)?;
+
+    // Open input file
+    let mut format_ctx = FormatContext::open(&input_file)?;
+
+    // Find video stream
     let video_stream = format_ctx
         .streams()
-        .find(|s| s.codec_type() == AVMediaType::Video)
-        .context("Could not find video stream")?;
+        .find(|s| matches!(s.codec_type(), AVMediaType::Video))
+        .expect("no video stream found");
 
-    // Get the decoder for the video stream
-    let decoder = Codec::find_decoder(video_stream.codec_id())
-        .context("Unsupported codec")?;
-    
-    // Create and configure decoder context
+    // Get decoder
+    let decoder = Codec::find_decoder(video_stream.codec_id()).expect("failed to find decoder");
+
+    // Create decoder context
     let mut codec_ctx = CodecContext::new(&decoder)?;
     video_stream.apply_parameters_to_context(&mut codec_ctx)?;
-    
-    // Set decoder to skip non-keyframes
+
+    // Only decode keyframes
     codec_ctx.set_skip_frame(AVDiscard::NonKey);
-    
+
+    // Open codec
     codec_ctx.open(&decoder)?;
 
-    // Allocate frames
+    // Create frames
     let mut frame = Frame::new()?;
+    let mut rgb_frame = Frame::new()?;
+
+    // Get frame dimensions
+    let width_i32 = codec_ctx.width();
+    let height_i32 = codec_ctx.height();
+    let width = width_i32 as u32;
+    let height = height_i32 as u32;
+    let src_pix_fmt = codec_ctx.pix_fmt();
+
+    // Allocate buffer for RGB frame
+    rgb_frame.allocate_buffer_ffmpeg(
+        width_i32,
+        height_i32,
+        AVPixelFormat::Rgb24 as i32,
+        1, // align to 1-byte boundary since we're using it with image crate
+    )?;
+
+    // Create scaler context for YUV to RGB conversion
+    let mut sws_ctx = SwsContext::get_context(
+        width_i32,
+        height_i32,
+        src_pix_fmt,
+        width_i32,
+        height_i32,
+        AVPixelFormat::Rgb24 as i32,
+        0,
+    )?;
+
+    // Create packet for reading
     let mut packet = Packet::new()?;
 
-    // Get timebase for PTS conversion
+    // Get stream timebase for PTS conversion
     let time_base = video_stream.time_base();
 
     // Read frames
@@ -55,13 +94,23 @@ fn main() -> anyhow::Result<()> {
                         // Since we set skip_frame to NonKey, we know this is a keyframe
                         let pts = frame.pts();
                         let pts_time = pts as f64 * time_base.as_f64();
-                        
-                        println!("Keyframe PTS: {} ({:.3} seconds)", pts, pts_time);
-                        
-                        // Process the keyframe data
-                        process_keyframe(&frame);
+
+                        println!("Saving keyframe PTS: {} ({:.3} seconds)", pts, pts_time);
+
+                        // Convert to RGB
+                        sws_ctx.copy(&frame, &mut rgb_frame)?;
+
+                        // Create RGB image from frame data
+                        let rgb_data = rgb_frame.data(0).unwrap();
+                        let rgb_image =
+                            image::ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb_data)
+                                .unwrap();
+
+                        // Save as JPEG
+                        let output_path = output_dir.join(format!("frame_{}.jpg", pts));
+                        rgb_image.save(output_path)?;
                     }
-                    Err(FFmpegError { code: EAGAIN, .. }) => break,
+                    Err(e) if e.code == libavcodec::EAGAIN => break,
                     Err(e) => return Err(e.into()),
                 }
             }
@@ -71,26 +120,3 @@ fn main() -> anyhow::Result<()> {
 
     Ok(())
 }
-
-fn process_keyframe(frame: &Frame) {
-    // Get frame dimensions
-    let width = frame.width();
-    let height = frame.height();
-    
-    println!("Processing keyframe: {}x{}", width, height);
-    
-    // Here you can implement your keyframe processing logic
-    // For example, you can access the raw frame data:
-    let y_plane = frame.data(0);
-    let u_plane = frame.data(1);
-    let v_plane = frame.data(2);
-    
-    // Get the line sizes for each plane
-    let y_linesize = frame.linesize(0);
-    let u_linesize = frame.linesize(1);
-    let v_linesize = frame.linesize(2);
-    
-    println!("Y plane linesize: {}", y_linesize);
-    println!("U plane linesize: {}", u_linesize);
-    println!("V plane linesize: {}", v_linesize);
-} 

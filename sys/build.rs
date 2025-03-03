@@ -31,6 +31,8 @@ fn main() {
         .allowlist_type("AVDictionary")
         .allowlist_type("AVOption")
         .allowlist_type("SwsContext")
+        .allowlist_type("SwsFilter")
+        .allowlist_item("SWS_.*")
         .allowlist_item("AVERROR_.*")
         .allowlist_item("AVError.*")
         .allowlist_function("av_.*")

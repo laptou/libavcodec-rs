@@ -1,11 +1,11 @@
 mod codec;
 mod constants;
 mod error;
-mod ffi;
 mod format;
 mod frame;
 mod packet;
 mod rational;
+mod sws;
 
 pub use codec::*;
 pub use constants::*;
@@ -14,3 +14,4 @@ pub use format::*;
 pub use frame::*;
 pub use packet::*;
 pub use rational::*;
+pub use sws::*;

@@ -39,16 +39,16 @@ impl SwsContext {
         }
     }
 
-    pub fn scale(&mut self, src: &Frame, dst: &mut Frame) -> Result<()> {
+    pub fn copy(&mut self, src: &Frame, dst: &mut Frame) -> Result<()> {
         let ret = unsafe {
             sys::sws_scale(
                 self.inner,
-                src.as_ptr().cast(),
-                (*src.as_ptr()).linesize.as_ptr(),
+                src.data_ptrs().as_ptr() as _,
+                src.data_line_sizes().as_ptr(),
                 0,
-                (*src.as_ptr()).height,
-                dst.as_mut_ptr().cast(),
-                (*dst.as_mut_ptr()).linesize.as_ptr(),
+                src.height(),
+                dst.data_ptrs().as_ptr(),
+                dst.data_line_sizes().as_ptr(),
             )
         };
 
@@ -66,4 +66,4 @@ impl Drop for SwsContext {
             sys::sws_freeContext(self.inner);
         }
     }
-}
+} 
