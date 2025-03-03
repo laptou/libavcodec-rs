@@ -7,7 +7,8 @@ use std::{ptr::NonNull, slice};
 
 pub struct Frame {
     inner: NonNull<sys::AVFrame>,
-    // store rust-allocated buffer if we create one
+    // store rust-allocated buffer if we create one. AVFrame tracks buffer with
+    // buf field, so as long as we don't set it, we shouldn't get double-free
     buffer: Option<Vec<u8>>,
 }
 
@@ -21,8 +22,8 @@ impl Frame {
         })
     }
 
-    /// Allocate a new buffer for this frame with the given parameters and set up the frame's
-    /// data pointers and linesize information.
+    /// Allocate a new buffer for this frame with the given parameters and set
+    /// up the frame's data pointers and linesize information.
     pub fn allocate_buffer(
         &mut self,
         width: usize,
@@ -60,6 +61,7 @@ impl Frame {
                 height,
                 align,
             );
+
             if ret < 0 {
                 return Err(FFmpegError::new(ret));
             }
