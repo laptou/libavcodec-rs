@@ -50,28 +50,26 @@ fn main() -> Result<()> {
     let mut rgb_frame = Frame::new()?;
 
     // Get frame dimensions
-    let width_i32 = codec_ctx.width();
-    let height_i32 = codec_ctx.height();
-    let width = width_i32 as u32;
-    let height = height_i32 as u32;
+    let width = codec_ctx.width();
+    let height = codec_ctx.height();
     let src_pix_fmt = codec_ctx.pix_fmt();
 
     // Allocate buffer for RGB frame
     rgb_frame.allocate_buffer_ffmpeg(
-        width_i32,
-        height_i32,
-        AVPixelFormat::Rgb24 as i32,
+        width,
+        height,
+        AVPixelFormat::Rgb24,
         1, // align to 1-byte boundary since we're using it with image crate
     )?;
 
     // Create scaler context for YUV to RGB conversion
     let mut sws_ctx = SwsContext::get_context(
-        width_i32,
-        height_i32,
+        width,
+        height,
         src_pix_fmt,
-        width_i32,
-        height_i32,
-        AVPixelFormat::Rgb24 as i32,
+        width,
+        height,
+        AVPixelFormat::Rgb24,
         0,
     )?;
 
@@ -102,9 +100,12 @@ fn main() -> Result<()> {
 
                         // Create RGB image from frame data
                         let rgb_data = rgb_frame.data(0).unwrap();
-                        let rgb_image =
-                            image::ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, rgb_data)
-                                .unwrap();
+                        let rgb_image = image::ImageBuffer::<Rgb<u8>, _>::from_raw(
+                            width as u32,
+                            height as u32,
+                            rgb_data,
+                        )
+                        .unwrap();
 
                         // Save as JPEG
                         let output_path = output_dir.join(format!("frame_{}.jpg", pts));

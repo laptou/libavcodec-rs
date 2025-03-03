@@ -1052,7 +1052,7 @@ pub enum AVPictureType {
 }
 
 #[repr(i32)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum AVPixelFormat {
     /// packed BGR 8:8:8, 32bpp, XBGRXBGR… X=unused/undefined
     ZeroBgr = AVPixelFormat_AV_PIX_FMT_0BGR,

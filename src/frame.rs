@@ -1,4 +1,7 @@
-use crate::error::{FFmpegError, Result};
+use crate::{
+    AVPixelFormat,
+    error::{FFmpegError, Result},
+};
 use libavcodec_sys as sys;
 use std::{ptr::NonNull, slice};
 
@@ -22,11 +25,16 @@ impl Frame {
     /// data pointers and linesize information.
     pub fn allocate_buffer(
         &mut self,
-        width: i32,
-        height: i32,
-        pix_fmt: sys::AVPixelFormat,
-        align: i32,
+        width: usize,
+        height: usize,
+        pix_fmt: AVPixelFormat,
+        align: usize,
     ) -> Result<()> {
+        let width = width as i32;
+        let height = height as i32;
+        let pix_fmt = pix_fmt as i32;
+        let align = align as i32;
+
         // get required buffer size
         let size = unsafe { sys::av_image_get_buffer_size(pix_fmt, width, height, align) };
         if size < 0 {
@@ -40,7 +48,7 @@ impl Frame {
             // setup frame parameters
             self.inner_mut().width = width;
             self.inner_mut().height = height;
-            self.inner_mut().format = pix_fmt as i32;
+            self.inner_mut().format = pix_fmt;
 
             // setup data pointers and linesize
             let ret = sys::av_image_fill_arrays(
@@ -67,16 +75,21 @@ impl Frame {
     /// to ensure proper cleanup.
     pub fn allocate_buffer_ffmpeg(
         &mut self,
-        width: i32,
-        height: i32,
-        pix_fmt: sys::AVPixelFormat,
-        align: i32,
+        width: usize,
+        height: usize,
+        pix_fmt: AVPixelFormat,
+        align: usize,
     ) -> Result<()> {
+        let width = width as i32;
+        let height = height as i32;
+        let pix_fmt = pix_fmt as i32;
+        let align = align as i32;
+
         unsafe {
             // setup frame parameters
             self.inner_mut().width = width;
             self.inner_mut().height = height;
-            self.inner_mut().format = pix_fmt as i32;
+            self.inner_mut().format = pix_fmt;
 
             let ret = sys::av_image_alloc(
                 self.inner_mut().data.as_mut_ptr(),

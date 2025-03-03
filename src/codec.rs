@@ -1,9 +1,11 @@
 use crate::AVCodecId;
+use crate::AVDiscard;
+use crate::AVPixelFormat;
 use crate::error::{FFmpegError, Result};
 use crate::frame::Frame;
 use crate::packet::Packet;
-use crate::AVDiscard;
 use libavcodec_sys as sys;
+use num_traits::FromPrimitive;
 use std::ptr;
 
 pub struct Codec {
@@ -46,16 +48,16 @@ impl CodecContext {
         self.inner
     }
 
-    pub fn width(&self) -> i32 {
-        unsafe { (*self.inner).width }
+    pub fn width(&self) -> usize {
+        unsafe { (*self.inner).width as usize }
     }
 
-    pub fn height(&self) -> i32 {
-        unsafe { (*self.inner).height }
+    pub fn height(&self) -> usize {
+        unsafe { (*self.inner).height as usize }
     }
 
-    pub fn pix_fmt(&self) -> i32 {
-        unsafe { (*self.inner).pix_fmt }
+    pub fn pix_fmt(&self) -> AVPixelFormat {
+        AVPixelFormat::from_i32(unsafe { (*self.inner).pix_fmt }).unwrap()
     }
 
     pub fn set_skip_frame(&mut self, value: AVDiscard) {
