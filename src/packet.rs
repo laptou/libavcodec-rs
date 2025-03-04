@@ -5,6 +5,8 @@ pub struct Packet {
     inner: *mut sys::AVPacket,
 }
 
+unsafe impl Send for Packet {}
+
 impl Packet {
     pub fn new() -> Result<Self> {
         let inner = unsafe { sys::av_packet_alloc() };

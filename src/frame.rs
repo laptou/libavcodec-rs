@@ -12,6 +12,7 @@ pub struct Frame {
     buffer: Option<Vec<u8>>,
 }
 
+unsafe impl Send for Frame {}
 impl Frame {
     pub fn new() -> Result<Self> {
         let inner = unsafe { sys::av_frame_alloc() };

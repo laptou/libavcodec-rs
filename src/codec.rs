@@ -12,6 +12,8 @@ pub struct Codec {
     inner: *const sys::AVCodec,
 }
 
+unsafe impl Send for Codec {}
+
 impl Codec {
     pub fn find_decoder(id: AVCodecId) -> Option<Self> {
         let inner = unsafe { sys::avcodec_find_decoder(id as i32) };
@@ -30,6 +32,8 @@ impl Codec {
 pub struct CodecContext {
     inner: *mut sys::AVCodecContext,
 }
+
+unsafe impl Send for CodecContext {}
 
 impl CodecContext {
     pub fn new(codec: &Codec) -> Result<Self> {

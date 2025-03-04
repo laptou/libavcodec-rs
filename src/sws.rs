@@ -8,6 +8,8 @@ pub struct SwsContext {
     inner: *mut sys::SwsContext,
 }
 
+unsafe impl Send for SwsContext {}
+
 impl SwsContext {
     pub fn get_context(
         src_width: usize,

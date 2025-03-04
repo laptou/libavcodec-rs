@@ -10,6 +10,8 @@ pub struct FormatContext {
     inner: *mut sys::AVFormatContext,
 }
 
+unsafe impl Send for FormatContext {}
+
 impl FormatContext {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path_str = path.as_ref().to_string_lossy();

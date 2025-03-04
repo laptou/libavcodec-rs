@@ -9,6 +9,8 @@ pub struct Stream {
     pub(crate) inner: *mut sys::AVStream,
 }
 
+unsafe impl Send for Stream {}
+
 impl Stream {
     pub fn index(&self) -> i32 {
         unsafe { (*self.inner).index }
