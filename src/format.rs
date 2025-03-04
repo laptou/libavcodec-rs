@@ -1,10 +1,7 @@
-use crate::codec::CodecContext;
 use crate::error::{FFmpegError, Result};
 use crate::packet::Packet;
-use crate::rational::Rational;
-use crate::{AVCodecId, AVMediaType};
+use crate::Stream;
 use libavcodec_sys as sys;
-use num_traits::FromPrimitive;
 use std::ffi::CString;
 use std::path::Path;
 use std::ptr;
@@ -74,43 +71,6 @@ impl Drop for FormatContext {
     fn drop(&mut self) {
         unsafe {
             sys::avformat_close_input(&mut self.inner);
-        }
-    }
-}
-
-pub struct Stream {
-    inner: *mut sys::AVStream,
-}
-
-impl Stream {
-    pub fn index(&self) -> i32 {
-        unsafe { (*self.inner).index }
-    }
-
-    pub fn codecpar(&self) -> *mut sys::AVCodecParameters {
-        unsafe { (*self.inner).codecpar }
-    }
-
-    pub fn time_base(&self) -> Rational {
-        unsafe { (*self.inner).time_base.into() }
-    }
-
-    pub fn codec_type(&self) -> AVMediaType {
-        AVMediaType::from_i32(unsafe { (*(*self.inner).codecpar).codec_type }).unwrap()
-    }
-
-    pub fn codec_id(&self) -> AVCodecId {
-        AVCodecId::from_i32(unsafe { (*(*self.inner).codecpar).codec_id }).unwrap()
-    }
-
-    pub fn apply_parameters_to_context(&self, codec_ctx: &mut CodecContext) -> Result<()> {
-        let ret =
-            unsafe { sys::avcodec_parameters_to_context(codec_ctx.as_mut_ptr(), self.codecpar()) };
-
-        if ret < 0 {
-            Err(FFmpegError::new(ret))
-        } else {
-            Ok(())
         }
     }
 }
