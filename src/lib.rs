@@ -7,6 +7,7 @@ mod packet;
 mod rational;
 mod stream;
 mod sws;
+mod swr;
 
 pub use codec::*;
 pub use constants::*;
@@ -17,3 +18,4 @@ pub use packet::*;
 pub use rational::*;
 pub use stream::*;
 pub use sws::*;
+pub use swr::*;
