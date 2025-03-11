@@ -1514,7 +1514,7 @@ pub enum AVPixelFormat {
 }
 
 #[repr(i32)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum AVSampleFormat {
     /// double
     Dbl = AVSampleFormat_AV_SAMPLE_FMT_DBL,

@@ -1,6 +1,7 @@
 use crate::AVCodecId;
 use crate::AVDiscard;
 use crate::AVPixelFormat;
+use crate::AVSampleFormat;
 use crate::error::{FFmpegError, Result};
 use crate::frame::Frame;
 use crate::packet::Packet;
@@ -60,8 +61,29 @@ impl CodecContext {
         unsafe { (*self.inner).height as usize }
     }
 
-    pub fn pix_fmt(&self) -> AVPixelFormat {
+    /// The pixel format of the video.  
+    pub fn pixel_format(&self) -> AVPixelFormat {
         AVPixelFormat::from_i32(unsafe { (*self.inner).pix_fmt }).unwrap()
+    }
+
+    /// The sample format of the audio.
+    pub fn sample_format(&self) -> AVSampleFormat {
+        AVSampleFormat::from_i32(unsafe { (*self.inner).sample_fmt }).unwrap()
+    }
+
+    /// The sample rate of the audio.
+    pub fn sample_rate(&self) -> usize {
+        unsafe { (*self.inner).sample_rate as usize }
+    }
+
+    /// The number of audio channels.
+    pub fn channel_count(&self) -> usize {
+        unsafe { (*self.inner).ch_layout.nb_channels as usize }
+    }
+
+    /// The number of audio samples per channel in an audio frame.
+    pub fn frame_size(&self) -> usize {
+        unsafe { (*self.inner).frame_size as usize }
     }
 
     pub fn set_skip_frame(&mut self, value: AVDiscard) {

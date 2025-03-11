@@ -51,7 +51,7 @@ fn main() -> Result<()> {
     // Get frame dimensions
     let width = codec_ctx.width();
     let height = codec_ctx.height();
-    let src_pix_fmt = codec_ctx.pix_fmt();
+    let src_pix_fmt = codec_ctx.pixel_format();
 
     // Allocate buffer for RGB frame
     rgb_frame.allocate_buffer_ffmpeg(
