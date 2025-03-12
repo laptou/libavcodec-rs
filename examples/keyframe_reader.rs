@@ -54,7 +54,7 @@ fn main() -> Result<()> {
     let src_pix_fmt = codec_ctx.pixel_format();
 
     // Allocate buffer for RGB frame
-    rgb_frame.allocate_buffer_ffmpeg(
+    rgb_frame.allocate_image_buffer_av(
         width,
         height,
         AVPixelFormat::Rgb24,

@@ -4,6 +4,21 @@ use crate::frame::Frame;
 use libavcodec_sys as sys;
 use std::ptr;
 
+/// Specifies the resampling algorithm to use
+#[derive(Debug, Clone, Copy)]
+pub enum ResampleAlgorithm {
+    /// Fast but lower quality resampling (linear interpolation)
+    Linear,
+    /// Balanced quality/speed resampling (cubic interpolation)
+    Cubic,
+    /// High quality resampling using sinc-based algorithm with Blackman window
+    /// The quality parameter determines the size of the filter (higher = better but slower)
+    Sinc {
+        /// Quality level from 0 (lowest) to 10 (highest)
+        quality: i32,
+    },
+}
+
 pub struct SwrContext {
     inner: *mut sys::SwrContext,
 }
@@ -18,6 +33,26 @@ impl SwrContext {
         out_sample_rate: usize,
         out_sample_fmt: AVSampleFormat,
         out_channel_count: usize,
+    ) -> Result<Self> {
+        Self::get_context_with_algorithm(
+            in_sample_rate,
+            in_sample_fmt,
+            in_channel_count,
+            out_sample_rate,
+            out_sample_fmt,
+            out_channel_count,
+            ResampleAlgorithm::Cubic, // default to cubic interpolation
+        )
+    }
+
+    pub fn get_context_with_algorithm(
+        in_sample_rate: usize,
+        in_sample_fmt: AVSampleFormat,
+        in_channel_count: usize,
+        out_sample_rate: usize,
+        out_sample_fmt: AVSampleFormat,
+        out_channel_count: usize,
+        algorithm: ResampleAlgorithm,
     ) -> Result<Self> {
         // Create default channel layouts based on channel counts
         let mut in_ch_layout = unsafe { std::mem::zeroed::<sys::AVChannelLayout>() };
@@ -57,17 +92,77 @@ impl SwrContext {
             return Err(FFmpegError::new(ret));
         }
 
+        let mut inner = unsafe { &mut *inner };
+
+        // Configure resampling algorithm
+        unsafe {
+            match algorithm {
+                ResampleAlgorithm::Linear => {
+                    // Linear interpolation - fast but lower quality
+                    sys::av_opt_set_int(
+                        inner as *mut _ as *mut _,
+                        "linear_interp\0".as_ptr() as *const i8,
+                        1,
+                        0,
+                    );
+                    sys::av_opt_set_int(
+                        inner as *mut _ as *mut _,
+                        "filter_type\0".as_ptr() as *const i8,
+                        0, // 0 = cubic
+                        0,
+                    );
+                }
+                ResampleAlgorithm::Cubic => {
+                    // Cubic interpolation - good balance of quality/speed
+                    sys::av_opt_set_int(
+                        inner as *mut _ as *mut _,
+                        "linear_interp\0".as_ptr() as *const i8,
+                        0,
+                        0,
+                    );
+                    sys::av_opt_set_int(
+                        inner as *mut _ as *mut _,
+                        "filter_type\0".as_ptr() as *const i8,
+                        0, // 0 = cubic
+                        0,
+                    );
+                }
+                ResampleAlgorithm::Sinc { quality } => {
+                    // Sinc resampling with configurable quality
+                    let quality = quality.clamp(0, 10);
+                    sys::av_opt_set_int(
+                        inner as *mut _ as *mut _,
+                        "linear_interp\0".as_ptr() as *const i8,
+                        0,
+                        0,
+                    );
+                    sys::av_opt_set_int(
+                        inner as *mut _ as *mut _,
+                        "filter_type\0".as_ptr() as *const i8,
+                        1, // 1 = sinc
+                        0,
+                    );
+                    sys::av_opt_set_int(
+                        inner as *mut _ as *mut _,
+                        "filter_size\0".as_ptr() as *const i8,
+                        (16 + quality * 8) as i64, // filter size based on quality
+                        0,
+                    );
+                }
+            }
+        }
+
         // initialize the resampler
         let ret = unsafe { sys::swr_init(inner) };
         if ret < 0 {
-            unsafe { sys::swr_free(&mut inner) };
+            unsafe { sys::swr_free(&mut inner as *mut _ as *mut _) };
             return Err(FFmpegError::new(ret));
         }
 
         Ok(SwrContext { inner })
     }
 
-    pub fn convert(&mut self, src: &Frame, dst: &mut Frame) -> Result<usize> {
+    pub fn convert(&mut self, src: &Frame, dst: &mut Frame) -> Result<()> {
         let ret = unsafe {
             sys::swr_convert_frame(
                 self.inner,
@@ -79,8 +174,7 @@ impl SwrContext {
         if ret < 0 {
             Err(FFmpegError::new(ret))
         } else {
-            // Return number of samples output per channel
-            Ok(dst.inner().nb_samples as usize)
+            Ok(())
         }
     }
 

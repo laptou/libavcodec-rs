@@ -1,6 +1,5 @@
 use crate::{
-    AVPixelFormat,
-    error::{FFmpegError, Result},
+    error::{FFmpegError, Result}, AVPixelFormat, AVSampleFormat
 };
 use libavcodec_sys as sys;
 use std::{ptr::NonNull, slice};
@@ -13,6 +12,7 @@ pub struct Frame {
 }
 
 unsafe impl Send for Frame {}
+
 impl Frame {
     pub fn new() -> Result<Self> {
         let inner = unsafe { sys::av_frame_alloc() };
@@ -25,7 +25,7 @@ impl Frame {
 
     /// Allocate a new buffer for this frame with the given parameters and set
     /// up the frame's data pointers and linesize information.
-    pub fn allocate_buffer(
+    pub fn allocate_image_buffer(
         &mut self,
         width: usize,
         height: usize,
@@ -76,7 +76,7 @@ impl Frame {
     /// Alternative allocation method that uses av_image_alloc directly.
     /// This lets ffmpeg handle the allocation but we still need to store the buffer
     /// to ensure proper cleanup.
-    pub fn allocate_buffer_ffmpeg(
+    pub fn allocate_image_buffer_av(
         &mut self,
         width: usize,
         height: usize,
@@ -107,6 +107,33 @@ impl Frame {
                 return Err(FFmpegError::new(ret));
             }
         }
+        Ok(())
+    }
+
+    pub fn allocate_audio_buffer(
+        &mut self,
+        channels: usize,
+        sample_rate: usize,
+        sample_count: usize,
+        sample_fmt: AVSampleFormat,
+    ) -> Result<()> {
+        let channels = channels as i32;
+        let sample_rate = sample_rate as i32;
+        let sample_fmt = sample_fmt as i32;
+
+        unsafe {
+            // setup frame parameters
+            self.inner_mut().nb_samples = sample_count as i32;
+            self.inner_mut().format = sample_fmt as i32;
+            self.inner_mut().sample_rate = sample_rate;
+            sys::av_channel_layout_default(&mut self.inner_mut().ch_layout, channels);
+
+            let ret = sys::av_frame_get_buffer(self.inner_mut(), 32);
+            if ret < 0 {
+                return Err(FFmpegError::new(ret));
+            }
+        }
+
         Ok(())
     }
 
@@ -202,6 +229,18 @@ impl Frame {
 
     pub fn height(&self) -> i32 {
         self.inner().height
+    }
+
+    pub fn sample_rate(&self) -> i32 {
+        self.inner().sample_rate
+    }
+
+    pub fn sample_count(&self) -> i32 {
+        self.inner().nb_samples
+    }
+
+    pub fn channel_count(&self) -> i32 {
+        self.inner().ch_layout.nb_channels
     }
 }
 

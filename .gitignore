@@ -9,3 +9,10 @@
 
 .vscode
 keyframes/
+*.wav
+*.mp3
+*.mp4
+*.avi
+*.mkv
+*.mov
+*.flv

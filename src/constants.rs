@@ -1546,4 +1546,27 @@ pub enum AVSampleFormat {
     U8p = AVSampleFormat_AV_SAMPLE_FMT_U8P,
 }
 
+#[repr(i32)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
+pub enum AVLogLevel {
+    /// No log level
+    Quiet = AV_LOG_QUIET,
+    /// Panic
+    Panic = AV_LOG_PANIC as i32,
+    /// Fatal
+    Fatal = AV_LOG_FATAL as i32,
+    /// Error
+    Error = AV_LOG_ERROR as i32,
+    /// Warning
+    Warning = AV_LOG_WARNING as i32,
+    /// Info
+    Info = AV_LOG_INFO as i32,
+    /// Verbose
+    Verbose = AV_LOG_VERBOSE as i32,
+    /// Debug
+    Debug = AV_LOG_DEBUG as i32,
+    /// Trace
+    Trace = AV_LOG_TRACE as i32,
+}
+
 pub const EAGAIN: i32 = -11;

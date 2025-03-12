@@ -10,7 +10,16 @@ edition = "2024"
 libavcodec-sys = { path = "sys" }
 num-derive = "0.4.2"
 num-traits = "0.2.19"
+thiserror = "2.0"
+tracing = { version = "0.1.41", optional = true }
 
 [dev-dependencies]
-anyhow = "1.0.96"
+anyhow = "1.0"
 image = "0.25"
+clap = { version = "4.5", features = ["derive"] }
+hound = "3.5"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+
+[features]
+tracing = ["dep:tracing"]

@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-env-changed=FFMPEG_ROOT");
+    println!("cargo:rerun-if-changed=wrapper.h");
+    println!("cargo:rerun-if-changed=wrapper.cpp");
 
     let (include_paths, lib_paths) = if let Some(ffmpeg_root) = env::var("FFMPEG_ROOT").ok() {
         let ffmpeg_root = PathBuf::from(ffmpeg_root);
@@ -45,6 +47,8 @@ fn main() {
         .allowlist_item("SWS_.*")
         .allowlist_item("AVERROR_.*")
         .allowlist_item("AVError.*")
+        .allowlist_item("AV_.*")
+        .allowlist_item("avrs_.*")
         .allowlist_function("av_.*")
         .allowlist_function("sws_.*")
         .allowlist_function("swr_.*")
@@ -55,7 +59,7 @@ fn main() {
         .allowlist_function("avdevice_.*")
         .allowlist_function("avresample_*");
 
-    for include_path in include_paths {
+    for include_path in &include_paths {
         builder = builder.clang_arg(format!("-I{}", include_path.display()));
     }
 
@@ -69,4 +73,9 @@ fn main() {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("couldn't write libavcodec bindings");
+
+    cc::Build::new()
+        .includes(include_paths)
+        .file("wrapper.cpp")
+        .compile("libavrs");
 }
