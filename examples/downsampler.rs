@@ -1,11 +1,12 @@
 use anyhow::Result;
 use clap::Parser;
-use hound::{WavSpec, WavWriter};
 use libavcodec::{
     AVMediaType, AVSampleFormat, Codec, CodecContext, EAGAIN, FormatContext, Frame, Packet,
-    SwrContext,
+    SwrContext
 };
-use std::path::PathBuf;
+use libavcodec_sys::{self as sys, AVIO_FLAG_WRITE};
+use std::{ffi::CString, path::PathBuf, ptr};
+
 
 /// Audio downsampler that converts any audio file to WAV with specified sample rate
 #[derive(Parser)]
@@ -35,10 +36,10 @@ fn main() -> Result<()> {
     libavcodec::setup_tracing();
 
     // Open input file
-    let mut format_ctx = FormatContext::open(&args.input)?;
+    let mut input_format_ctx = FormatContext::open(&args.input)?;
 
     // Find audio stream
-    let audio_stream = format_ctx
+    let audio_stream = input_format_ctx
         .streams()
         .find(|s| matches!(s.codec_type(), AVMediaType::Audio))
         .expect("no audio stream found");
@@ -47,16 +48,16 @@ fn main() -> Result<()> {
     let decoder = Codec::find_decoder(audio_stream.codec_id()).expect("failed to find decoder");
 
     // Create decoder context
-    let mut codec_ctx = CodecContext::new(&decoder)?;
-    audio_stream.apply_parameters_to_context(&mut codec_ctx)?;
+    let mut input_codec_ctx = CodecContext::new(&decoder)?;
+    audio_stream.apply_parameters_to_context(&mut input_codec_ctx)?;
 
-    // Open codec
-    codec_ctx.open(&decoder)?;
+    // Open decoder
+    input_codec_ctx.open(&decoder)?;
 
     // Get input format details
-    let in_sample_rate = codec_ctx.sample_rate();
-    let in_sample_fmt = codec_ctx.sample_format();
-    let in_channels = codec_ctx.channel_count();
+    let in_sample_rate = input_codec_ctx.sample_rate();
+    let in_sample_fmt = input_codec_ctx.sample_format();
+    let in_channels = input_codec_ctx.channel_count();
 
     println!(
         "Input: {} Hz, {} channels, format: {:?}",
@@ -72,6 +73,80 @@ fn main() -> Result<()> {
         "Output: {} Hz, {} channels, format: {:?}",
         out_sample_rate, out_channels, out_sample_fmt
     );
+
+    // Create output format context for WAV
+    let mut output_format_ctx = unsafe {
+        let path_cstr = CString::new(args.output.to_str().unwrap()).unwrap();
+        let mut ctx = ptr::null_mut();
+        let ret = sys::avformat_alloc_output_context2(
+            &mut ctx,
+            ptr::null_mut(),
+            b"wav\0".as_ptr() as *const i8,
+            path_cstr.as_ptr(),
+        );
+        if ret < 0 {
+            return Err(anyhow::anyhow!("Failed to create output context"));
+        }
+        ctx
+    };
+
+    // Find WAV encoder
+    let encoder = unsafe {
+        let encoder = sys::avcodec_find_encoder(sys::AVCodecID_AV_CODEC_ID_PCM_S16LE);
+        if encoder.is_null() {
+            return Err(anyhow::anyhow!("Failed to find WAV encoder"));
+        }
+        encoder
+    };
+
+    // Create output stream
+    let output_stream = unsafe {
+        let stream = sys::avformat_new_stream(output_format_ctx, encoder);
+        if stream.is_null() {
+            return Err(anyhow::anyhow!("Failed to create output stream"));
+        }
+        stream
+    };
+
+    // Set output codec parameters
+    unsafe {
+        let codec_params = (*output_stream).codecpar;
+        (*codec_params).codec_type = sys::AVMediaType_AVMEDIA_TYPE_AUDIO;
+        (*codec_params).codec_id = sys::AVCodecID_AV_CODEC_ID_PCM_S16LE;
+        (*codec_params).sample_rate = out_sample_rate as i32;
+        (*codec_params).format = sys::AVSampleFormat_AV_SAMPLE_FMT_S16 as i32;
+        (*codec_params).bit_rate = out_sample_rate as i64 * 16; // 16 bits per sample
+        sys::av_channel_layout_default(&mut (*codec_params).ch_layout, out_channels as i32);
+    }
+
+    // Set stream time base
+    unsafe {
+        (*output_stream).time_base = sys::AVRational {
+            num: 1,
+            den: out_sample_rate as i32,
+        };
+    }
+
+    // Open output file
+    let path_cstr = CString::new(args.output.to_str().unwrap()).unwrap();
+    let ret = unsafe {
+        sys::avio_open2(
+            &mut (*output_format_ctx).pb,
+            path_cstr.as_ptr(),
+            AVIO_FLAG_WRITE,
+            ptr::null(),
+            ptr::null_mut(),
+        )
+    };
+    if ret < 0 {
+        return Err(anyhow::anyhow!("Failed to open output file"));
+    }
+
+    // Write header
+    let ret = unsafe { sys::avformat_write_header(output_format_ctx, ptr::null_mut()) };
+    if ret < 0 {
+        return Err(anyhow::anyhow!("Failed to write header"));
+    }
 
     // Create resampler context
     let mut swr_ctx = SwrContext::get_context(
@@ -95,32 +170,22 @@ fn main() -> Result<()> {
     // Create packet for reading
     let mut packet = Packet::new()?;
 
-    // Set up WAV writer
-    let spec = WavSpec {
-        channels: args.channels,
-        sample_rate: args.sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut wav_writer = WavWriter::create(&args.output, spec)?;
-
     // Read packets
-    while format_ctx.read_packet(&mut packet)? {
+    while input_format_ctx.read_packet(&mut packet)? {
         if packet.stream_index() == audio_stream.index() {
             // Send packet to decoder
-            codec_ctx.send_packet(&packet)?;
+            input_codec_ctx.send_packet(&packet)?;
 
             // Receive frames from decoder
             loop {
-                match codec_ctx.receive_frame(&mut input_frame) {
+                match input_codec_ctx.receive_frame(&mut input_frame) {
                     Ok(()) => {
                         // Calculate output frame size based on input frame and resampling ratio
                         let out_samples = swr_ctx.get_out_samples(input_frame.sample_count());
 
                         // Set up output frame
-                        // output_frame.set_nb_samples(out_samples);
                         output_frame.allocate_audio_buffer(
-                            1,
+                            out_channels,
                             out_sample_rate,
                             out_samples as usize,
                             out_sample_fmt,
@@ -130,42 +195,62 @@ fn main() -> Result<()> {
                         swr_ctx.convert_frame(Some(&input_frame), &mut output_frame)?;
 
                         // Calculate timestamps
-                        let pts = if input_frame.pts() != -1 {
+                        if input_frame.pts() != -1 {
                             let pts = input_frame.pts();
-                            let time_base = audio_stream.time_base();
+                            let in_time_base = unsafe { (*audio_stream).time_base };
+                            let out_time_base = unsafe { (*output_stream).time_base };
                             let out_pts = unsafe {
-                                libavcodec_sys::av_rescale_q(
+                                sys::av_rescale_q(
                                     pts,
-                                    libavcodec_sys::AVRational {
-                                        num: time_base.num(),
-                                        den: time_base.den(),
-                                    },
-                                    libavcodec_sys::AVRational {
-                                        num: 1,
-                                        den: out_sample_rate as i32,
-                                    },
+                                    in_time_base,
+                                    out_time_base,
                                 )
                             };
                             output_frame.set_pts(out_pts);
-                            Some(out_pts)
-                        } else {
-                            None
-                        };
+                        }
 
-                        // Write output frame data to WAV file
-                        if let Some(data) = output_frame.data(0) {
-                            // Get actual samples written
-                            let samples_written =
-                                output_frame.sample_count() as usize * out_channels;
+                        // Encode the resampled frame
+                        unsafe {
+                            let ret = sys::avcodec_send_frame(
+                                output_stream.as_mut_ptr().codecpar.codec,
+                                output_frame.as_ptr(),
+                            );
+                            if ret < 0 {
+                                return Err(FFmpegError::new(ret).into());
+                            }
+                        }
 
-                            // Convert raw bytes to i16 samples
-                            let samples = data[..samples_written * 2]
-                                .chunks_exact(2)
-                                .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]));
+                        // Get encoded packets
+                        loop {
+                            let mut enc_packet = Packet::new()?;
+                            let ret = unsafe {
+                                sys::avcodec_receive_packet(
+                                    output_stream.as_mut_ptr().codecpar.codec,
+                                    enc_packet.as_mut_ptr(),
+                                )
+                            };
+                            match ret {
+                                0 => {
+                                    // Set stream index
+                                    enc_packet.set_stream_index(0);
 
-                            // Write samples to WAV file
-                            for sample in samples {
-                                wav_writer.write_sample(sample)?;
+                                    // Rescale packet timestamps
+                                    unsafe {
+                                        sys::av_packet_rescale_ts(
+                                            enc_packet.as_mut_ptr(),
+                                            (*output_stream.as_mut_ptr().codecpar.codec).time_base,
+                                            output_stream.time_base(),
+                                        );
+                                    }
+
+                                    // Write the packet
+                                    let ret = unsafe { sys::av_interleaved_write_frame(output_format_ctx, enc_packet.as_ptr()) };
+                                    if ret < 0 {
+                                        return Err(anyhow::anyhow!("Failed to write frame"));
+                                    }
+                                }
+                                err if err == EAGAIN => break,
+                                err => return Err(FFmpegError::new(err).into()),
                             }
                         }
                     }
@@ -178,17 +263,16 @@ fn main() -> Result<()> {
     }
 
     // Flush the decoder
-    codec_ctx.send_packet(&Packet::new()?)?;
+    input_codec_ctx.send_packet(&Packet::new()?)?;
     loop {
-        match codec_ctx.receive_frame(&mut input_frame) {
+        match input_codec_ctx.receive_frame(&mut input_frame) {
             Ok(()) => {
                 // Calculate output frame size based on input frame and resampling ratio
                 let out_samples = swr_ctx.get_out_samples(input_frame.sample_count());
 
                 // Set up output frame
-                // output_frame.set_nb_samples(out_samples);
                 output_frame.allocate_audio_buffer(
-                    1,
+                    out_channels,
                     out_sample_rate,
                     out_samples as usize,
                     out_sample_fmt,
@@ -197,19 +281,48 @@ fn main() -> Result<()> {
                 // Convert audio
                 swr_ctx.convert_frame(Some(&input_frame), &mut output_frame)?;
 
-                // Write output frame data to WAV file
-                if let Some(data) = output_frame.data(0) {
-                    // Get actual samples written
-                    let samples_written = output_frame.sample_count() as usize * out_channels;
+                // Encode the resampled frame
+                unsafe {
+                    let ret = sys::avcodec_send_frame(
+                        output_stream.as_mut_ptr().codecpar.codec,
+                        output_frame.as_ptr(),
+                    );
+                    if ret < 0 {
+                        return Err(FFmpegError::new(ret).into());
+                    }
+                }
 
-                    // Convert raw bytes to i16 samples
-                    let samples = data[..samples_written * 2]
-                        .chunks_exact(2)
-                        .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]));
+                // Get encoded packets
+                loop {
+                    let mut enc_packet = Packet::new()?;
+                    let ret = unsafe {
+                        sys::avcodec_receive_packet(
+                            output_stream.as_mut_ptr().codecpar.codec,
+                            enc_packet.as_mut_ptr(),
+                        )
+                    };
+                    match ret {
+                        0 => {
+                            // Set stream index
+                            enc_packet.set_stream_index(0);
 
-                    // Write samples to WAV file
-                    for sample in samples {
-                        wav_writer.write_sample(sample)?;
+                            // Rescale packet timestamps
+                            unsafe {
+                                sys::av_packet_rescale_ts(
+                                    enc_packet.as_mut_ptr(),
+                                    (*output_stream.as_mut_ptr().codecpar.codec).time_base,
+                                    output_stream.time_base(),
+                                );
+                            }
+
+                            // Write the packet
+                            let ret = unsafe { sys::av_interleaved_write_frame(output_format_ctx, enc_packet.as_ptr()) };
+                            if ret < 0 {
+                                return Err(anyhow::anyhow!("Failed to write frame"));
+                            }
+                        }
+                        err if err == EAGAIN => break,
+                        err => return Err(FFmpegError::new(err).into()),
                     }
                 }
             }
@@ -218,50 +331,56 @@ fn main() -> Result<()> {
         }
     }
 
-    // Flush the resampler
+    // Flush the encoder
+    unsafe {
+        let ret = sys::avcodec_send_frame(output_stream.as_mut_ptr().codecpar.codec, std::ptr::null());
+        if ret < 0 {
+            return Err(FFmpegError::new(ret).into());
+        }
+    }
     loop {
-        // Set up output frame
-        // output_frame.set_nb_samples(1024); // Use a reasonable buffer size
-        output_frame.allocate_audio_buffer(
-            1,
-            out_sample_rate,
-            1024,
-            out_sample_fmt,
-        )?;
+        let mut enc_packet = Packet::new()?;
+        let ret = unsafe {
+            sys::avcodec_receive_packet(
+                output_stream.as_mut_ptr().codecpar.codec,
+                enc_packet.as_mut_ptr(),
+            )
+        };
+        match ret {
+            0 => {
+                // Set stream index
+                enc_packet.set_stream_index(0);
 
-        // Convert any remaining samples
-        match swr_ctx.convert_frame(None, &mut output_frame) {
-            Ok(()) => {
-                if output_frame.sample_count() > 0 {
-                    // Write output frame data to WAV file
-                    if let Some(data) = output_frame.data(0) {
-                        // Get actual samples written
-                        let samples_written = output_frame.sample_count() as usize * out_channels;
+                // Rescale packet timestamps
+                unsafe {
+                    sys::av_packet_rescale_ts(
+                        enc_packet.as_mut_ptr(),
+                        (*output_stream.as_mut_ptr().codecpar.codec).time_base,
+                        output_stream.time_base(),
+                    );
+                }
 
-                        // Convert raw bytes to i16 samples
-                        let samples = data[..samples_written * 2]
-                            .chunks_exact(2)
-                            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]));
-
-                        // Write samples to WAV file
-                        for sample in samples {
-                            wav_writer.write_sample(sample)?;
-                        }
-                    }
-                } else {
-                    break;
+                // Write the packet
+                let ret = unsafe { sys::av_interleaved_write_frame(output_format_ctx, enc_packet.as_ptr()) };
+                if ret < 0 {
+                    return Err(anyhow::anyhow!("Failed to write frame"));
                 }
             }
-            Err(_) => break,
+            err if err == EAGAIN => break,
+            err => return Err(FFmpegError::new(err).into()),
         }
     }
 
-    // Finalize WAV file
-    wav_writer.finalize()?;
+    // Write trailer
+    let ret = unsafe { sys::av_write_trailer(output_format_ctx) };
+    if ret < 0 {
+        return Err(anyhow::anyhow!("Failed to write trailer"));
+    }
 
     println!(
         "Conversion complete! Output saved to: {}",
         args.output.display()
     );
+
     Ok(())
 }
