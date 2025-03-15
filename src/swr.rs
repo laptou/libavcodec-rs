@@ -181,6 +181,94 @@ impl SwrContext {
     pub fn get_delay(&self, base: i32) -> i64 {
         unsafe { sys::swr_get_delay(self.inner, base as i64) }
     }
+
+    pub fn convert_frame(&mut self, src: Option<&Frame>, dst: &mut Frame) -> Result<()> {
+        let src_ptr = src.map_or(std::ptr::null(), |f| f.as_ptr());
+        let ret = unsafe {
+            sys::swr_convert_frame(
+                self.inner,
+                dst.as_mut_ptr(),
+                src_ptr,
+            )
+        };
+
+        if ret < 0 {
+            Err(FFmpegError::new(ret))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn get_out_samples(&self, in_samples: i32) -> i32 {
+        unsafe {
+            sys::av_rescale_rnd(
+                in_samples as i64,
+                self.get_out_rate() as i64,
+                self.get_in_rate() as i64,
+                sys::AVRounding_AV_ROUND_UP,
+            ) as i32
+        }
+    }
+
+    pub fn get_in_rate(&self) -> i32 {
+        unsafe {
+            let mut rate = 0;
+            sys::av_opt_get_int(
+                self.inner as *mut _ as *mut _,
+                "in_sample_rate\0".as_ptr() as *const i8,
+                0,
+                &mut rate,
+            );
+            rate as i32
+        }
+    }
+
+    pub fn get_out_rate(&self) -> i32 {
+        unsafe {
+            let mut rate = 0;
+            sys::av_opt_get_int(
+                self.inner as *mut _ as *mut _,
+                "out_sample_rate\0".as_ptr() as *const i8,
+                0,
+                &mut rate,
+            );
+            rate as i32
+        }
+    }
+
+    pub fn set_compensation(&mut self, sample_delta: i32, compensation_distance: i32) -> Result<()> {
+        let ret = unsafe {
+            sys::swr_set_compensation(
+                self.inner,
+                sample_delta,
+                compensation_distance,
+            )
+        };
+
+        if ret < 0 {
+            Err(FFmpegError::new(ret))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn drop_output(&mut self, count: i32) -> Result<()> {
+        let ret = unsafe { sys::swr_drop_output(self.inner, count) };
+        if ret < 0 {
+            Err(FFmpegError::new(ret))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn inject_silence(&mut self, count: i32) -> Result<()> {
+        let ret = unsafe { sys::swr_inject_silence(self.inner, count) };
+        if ret < 0 {
+            Err(FFmpegError::new(ret))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl Drop for SwrContext {

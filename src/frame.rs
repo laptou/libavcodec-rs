@@ -1,5 +1,6 @@
 use crate::{
-    error::{FFmpegError, Result}, AVPixelFormat, AVSampleFormat
+    AVPixelFormat, AVSampleFormat,
+    error::{FFmpegError, Result},
 };
 use libavcodec_sys as sys;
 use std::{ptr::NonNull, slice};
@@ -112,12 +113,12 @@ impl Frame {
 
     pub fn allocate_audio_buffer(
         &mut self,
-        channels: usize,
+        channel_count: usize,
         sample_rate: usize,
         sample_count: usize,
         sample_fmt: AVSampleFormat,
     ) -> Result<()> {
-        let channels = channels as i32;
+        let channel_count = channel_count as i32;
         let sample_rate = sample_rate as i32;
         let sample_fmt = sample_fmt as i32;
 
@@ -126,7 +127,7 @@ impl Frame {
             self.inner_mut().nb_samples = sample_count as i32;
             self.inner_mut().format = sample_fmt as i32;
             self.inner_mut().sample_rate = sample_rate;
-            sys::av_channel_layout_default(&mut self.inner_mut().ch_layout, channels);
+            sys::av_channel_layout_default(&mut self.inner_mut().ch_layout, channel_count);
 
             let ret = sys::av_frame_get_buffer(self.inner_mut(), 32);
             if ret < 0 {
@@ -241,6 +242,76 @@ impl Frame {
 
     pub fn channel_count(&self) -> i32 {
         self.inner().ch_layout.nb_channels
+    }
+
+    pub fn set_pts(&mut self, pts: i64) {
+        self.inner_mut().pts = pts;
+    }
+
+    pub fn set_pkt_dts(&mut self, dts: i64) {
+        self.inner_mut().pkt_dts = dts;
+    }
+
+    pub fn set_best_effort_timestamp(&mut self, timestamp: i64) {
+        self.inner_mut().best_effort_timestamp = timestamp;
+    }
+
+    pub fn set_sample_rate(&mut self, rate: i32) {
+        self.inner_mut().sample_rate = rate;
+    }
+
+    pub fn set_channel_count(&mut self, channels: i32) {
+        unsafe {
+            sys::av_channel_layout_default(&mut self.inner_mut().ch_layout, channels);
+        }
+    }
+
+    pub fn set_format(&mut self, format: i32) {
+        self.inner_mut().format = format;
+    }
+
+    pub fn set_nb_samples(&mut self, nb_samples: i32) {
+        self.inner_mut().nb_samples = nb_samples;
+    }
+
+    pub fn make_writable(&mut self) -> Result<()> {
+        let ret = unsafe { sys::av_frame_make_writable(self.inner_mut()) };
+        if ret < 0 {
+            Err(FFmpegError::new(ret))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn copy_props(&mut self, src: &Frame) -> Result<()> {
+        let ret = unsafe { sys::av_frame_copy_props(self.inner_mut(), src.as_ptr()) };
+        if ret < 0 {
+            Err(FFmpegError::new(ret))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn samples_linesize(&self, align: i32) -> Result<i32> {
+        let mut linesize = 0;
+        let ret = unsafe {
+            sys::av_samples_get_buffer_size(
+                &mut linesize,
+                self.channel_count(),
+                self.sample_count(),
+                self.format() as i32,
+                align,
+            )
+        };
+        if ret < 0 {
+            Err(FFmpegError::new(ret))
+        } else {
+            Ok(linesize)
+        }
+    }
+
+    pub fn format(&self) -> i32 {
+        self.inner().format
     }
 }
 
