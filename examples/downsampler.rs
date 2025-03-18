@@ -145,8 +145,6 @@ fn main() -> Result<()> {
 
             // Receive frames from decoder
             loop {
-                input_frame.unref();
-
                 match input_codec_ctx.receive_frame(&mut input_frame) {
                     Ok(()) => {
                         let delay_samples = swr_ctx.get_delay(in_sample_rate as i32);
@@ -160,7 +158,7 @@ fn main() -> Result<()> {
 
                         output_frame.unref();
 
-                        // Set up output frame - allocate buffer BEFORE conversion
+                        // Set up output frame - allocate buffer
                         output_frame.allocate_audio_buffer(
                             out_channels as usize,
                             out_sample_rate as usize,

@@ -145,25 +145,6 @@ impl Frame {
             if ret < 0 {
                 return Err(Error::new(ret));
             }
-
-            // // Set up frame data pointers
-            // let ret = {
-            //     let mut inner = self.inner_mut();
-
-            //     sys::av_samples_fill_arrays(
-            //         inner.data.as_mut_ptr(),
-            //         inner.linesize.as_mut_ptr(),
-            //         inner.data[0],
-            //         channel_count,
-            //         sample_count as i32,
-            //         sample_fmt as i32,
-            //         64, // Alignment
-            //     )
-            // };
-
-            // if ret < 0 {
-            //     return Err(Error::new(ret));
-            // }
         }
 
         Ok(())
