@@ -125,8 +125,12 @@ fn main() -> Result<()> {
         ResampleAlgorithm::Sinc { quality: 5 }, // Use higher quality resampling
     )?;
 
-    // Create packet for reading
+    // Create packet for reading and one for encoding output
     let mut packet = Packet::new()?;
+    let mut enc_packet = Packet::new()?;
+    
+    // Tracking variable for output pts
+    let mut pts = 0i64;
 
     // Read packets
     while input_format_ctx.read_packet(&mut packet)? {
@@ -157,30 +161,36 @@ fn main() -> Result<()> {
                         // Convert audio
                         swr_ctx.convert_frame(Some(&input_frame), &mut output_frame)?;
 
-                        // Calculate timestamps
-                        // if input_frame.pts() != -1 {
-                        //     let pts = input_frame.pts();
-                        //     let in_time_base = audio_stream.time_base();
-                        //     let out_time_base = output_stream.time_base();
-                        //     let out_pts =
-                        //         pts * (out_time_base.den() as i64) * (in_time_base.num() as i64)
-                        //             / ((in_time_base.den() as i64) * (out_time_base.num() as i64));
-                        //     output_frame.set_pts(out_pts);
-                        // }
+                        // Set timestamp
+                        output_frame.set_pts(pts);
+                        pts += output_frame.sample_count() as i64;
 
                         // Send frame to encoder
                         output_codec_ctx.send_frame(Some(&output_frame))?;
 
                         // Receive packets from encoder
                         loop {
-                            let mut enc_packet = Packet::new()?;
+                            // Unref previous content before receiving new packet
+                            enc_packet.unref();
+                            
                             match output_codec_ctx.receive_packet(&mut enc_packet) {
                                 Ok(()) => {
                                     enc_packet.set_stream_index(0);
+                                    
+                                    // Calculate packet timestamps based on stream time base
+                                    if let Some(frame_pts) = if output_frame.pts() != -1 { Some(output_frame.pts()) } else { None } {
+                                        let in_time_base = audio_stream.time_base();
+                                        let out_time_base = output_stream.time_base();
+                                        
+                                        // Rescale timestamps to output stream time base
+                                        enc_packet.rescale_ts(
+                                            output_codec_ctx.time_base().into(),
+                                            output_stream.time_base().into()
+                                        );
+                                    }
+                                    
                                     // Write the packet
-                                    // output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
-                                    output_format_ctx.write_frame(&mut enc_packet)?;
-
+                                    output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
                                 }
                                 Err(e) if e.code == EAGAIN => break,
                                 Err(e) => return Err(e.into()),
@@ -192,8 +202,6 @@ fn main() -> Result<()> {
                 }
             }
         }
-
-        packet = Packet::new()?;
     }
 
     // Flush the decoder
@@ -218,25 +226,31 @@ fn main() -> Result<()> {
                 // Convert audio
                 swr_ctx.convert_frame(Some(&input_frame), &mut output_frame)?;
 
-                // Calculate timestamps
-                if input_frame.pts() != -1 {
-                    let pts = input_frame.pts();
-                    let in_time_base = audio_stream.time_base();
-                    let out_time_base = output_stream.time_base();
-                    let out_pts = pts * (out_time_base.den() as i64) * (in_time_base.num() as i64)
-                        / ((in_time_base.den() as i64) * (out_time_base.num() as i64));
-                    output_frame.set_pts(out_pts);
-                }
+                // Set timestamp
+                output_frame.set_pts(pts);
+                pts += output_frame.sample_count() as i64;
 
                 // Send frame to encoder
                 output_codec_ctx.send_frame(Some(&output_frame))?;
 
                 // Receive packets from encoder
                 loop {
-                    let mut enc_packet = Packet::new()?;
+                    // Unref previous content
+                    enc_packet.unref();
+                    
                     match output_codec_ctx.receive_packet(&mut enc_packet) {
                         Ok(()) => {
                             enc_packet.set_stream_index(0);
+                            
+                            // Calculate packet timestamps
+                            if let Some(frame_pts) = if output_frame.pts() != -1 { Some(output_frame.pts()) } else { None } {
+                                // Rescale timestamps to output stream time base
+                                enc_packet.rescale_ts(
+                                    output_codec_ctx.time_base().into(),
+                                    output_stream.time_base().into()
+                                );
+                            }
+                            
                             // Write the packet
                             output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
                         }
@@ -253,10 +267,19 @@ fn main() -> Result<()> {
     // Flush the encoder
     output_codec_ctx.send_frame(None)?;
     loop {
-        let mut enc_packet = Packet::new()?;
+        // Unref previous content
+        enc_packet.unref();
+        
         match output_codec_ctx.receive_packet(&mut enc_packet) {
             Ok(()) => {
                 enc_packet.set_stream_index(0);
+                
+                // Rescale timestamps to output stream time base
+                enc_packet.rescale_ts(
+                    output_codec_ctx.time_base().into(),
+                    output_stream.time_base().into()
+                );
+                
                 // Write the packet
                 output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
             }
