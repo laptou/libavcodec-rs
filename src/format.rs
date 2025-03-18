@@ -1,5 +1,5 @@
 use crate::Stream;
-use crate::error::{FFmpegError, Result};
+use crate::error::{Error, Result};
 use crate::packet::Packet;
 use libavcodec_sys as sys;
 use std::ffi::CString;
@@ -40,14 +40,14 @@ impl FormatContext {
         };
 
         if ret < 0 {
-            return Err(FFmpegError::new(ret));
+            return Err(Error::new(ret));
         }
 
         let ret = unsafe { sys::avformat_find_stream_info(inner, ptr::null_mut()) };
 
         if ret < 0 {
             unsafe { sys::avformat_close_input(&mut inner) };
-            return Err(FFmpegError::new(ret));
+            return Err(Error::new(ret));
         }
 
         let inner = NonNull::new(inner).unwrap();
@@ -81,7 +81,7 @@ impl FormatContext {
             if ret == sys::AVErrorEof {
                 Ok(false)
             } else {
-                Err(FFmpegError::new(ret))
+                Err(Error::new(ret))
             }
         } else {
             Ok(true)
@@ -89,8 +89,8 @@ impl FormatContext {
     }
 
     pub fn output<P: AsRef<Path>>(path: P, format: Option<&str>) -> Result<Self> {
-        let path_str = path.as_ref().to_str().ok_or(FFmpegError::new(-1))?;
-        let path_cstr = CString::new(path_str).map_err(|_| FFmpegError::new(-1))?;
+        let path_str = path.as_ref().to_str().ok_or(Error::Utf8)?;
+        let path_cstr = CString::new(path_str).map_err(|_| Error::NulByte)?;
         let format_cstr = format.map(|f| CString::new(f).unwrap());
 
         let mut ctx = std::ptr::null_mut();
@@ -107,10 +107,10 @@ impl FormatContext {
         };
 
         if ret < 0 {
-            return Err(FFmpegError::new(ret));
+            return Err(Error::new(ret));
         }
 
-        let ctx = NonNull::new(ctx).ok_or(FFmpegError::new(-1))?;
+        let ctx = NonNull::new(ctx).ok_or(Error::Alloc)?;
 
         // Open output file if needed
         if unsafe { (*ctx.as_ptr()).oformat.as_ref() }
@@ -126,7 +126,7 @@ impl FormatContext {
             };
             if ret < 0 {
                 unsafe { sys::avformat_free_context(ctx.as_ptr()) };
-                return Err(FFmpegError::new(ret));
+                return Err(Error::new(ret));
             }
         }
 
@@ -136,7 +136,7 @@ impl FormatContext {
     pub fn write_header(&mut self) -> Result<()> {
         let ret = unsafe { sys::avformat_write_header(self.as_mut(), std::ptr::null_mut()) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -145,7 +145,7 @@ impl FormatContext {
     pub fn write_frame(&mut self, packet: &mut Packet) -> Result<()> {
         let ret = unsafe { sys::av_write_frame(self.as_mut(), packet.as_mut()) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -154,7 +154,7 @@ impl FormatContext {
     pub fn write_frame_interleaved(&mut self, packet: &mut Packet) -> Result<()> {
         let ret = unsafe { sys::av_interleaved_write_frame(self.as_mut(), packet.as_mut()) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -163,7 +163,7 @@ impl FormatContext {
     pub fn write_trailer(&mut self) -> Result<()> {
         let ret = unsafe { sys::av_write_trailer(self.as_mut()) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -171,7 +171,7 @@ impl FormatContext {
 
     pub fn new_stream(&mut self) -> Result<Stream> {
         let stream = unsafe { sys::avformat_new_stream(self.as_mut(), ptr::null()) };
-        let stream = NonNull::new(stream).ok_or(FFmpegError::new(-1))?;
+        let stream = NonNull::new(stream).ok_or(Error::Alloc)?;
 
         Ok(Stream { inner: stream })
     }

@@ -1,6 +1,6 @@
 use std::ptr::NonNull;
 
-use crate::error::{FFmpegError, Result};
+use crate::error::{Error, Result};
 use libavcodec_sys as sys;
 
 #[derive(Debug)]
@@ -25,8 +25,7 @@ impl AsMut<sys::AVPacket> for Packet {
 impl Packet {
     pub fn new() -> Result<Self> {
         let inner = unsafe { sys::av_packet_alloc() };
-        let inner = NonNull::new(inner).ok_or(FFmpegError::new(-1))?;
-        // unsafe { sys::av_init_packet(inner.as_mut()) };
+        let inner = NonNull::new(inner).ok_or(Error::Alloc)?;
 
         Ok(Packet { inner })
     }

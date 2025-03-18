@@ -1,5 +1,5 @@
 use crate::AVSampleFormat;
-use crate::error::{FFmpegError, Result};
+use crate::error::{Error, Result};
 use crate::frame::Frame;
 use libavcodec_sys as sys;
 use std::ptr;
@@ -57,12 +57,12 @@ impl SwrContext {
         // Create default channel layouts based on channel counts
         let mut in_ch_layout = unsafe { std::mem::zeroed::<sys::AVChannelLayout>() };
         let mut out_ch_layout = unsafe { std::mem::zeroed::<sys::AVChannelLayout>() };
-        
+
         unsafe {
             // Initialize channel layouts with just channel counts
             in_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
             in_ch_layout.nb_channels = in_channel_count as i32;
-            
+
             out_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
             out_ch_layout.nb_channels = out_channel_count as i32;
         }
@@ -71,14 +71,14 @@ impl SwrContext {
         let ret = unsafe {
             sys::swr_alloc_set_opts2(
                 &mut inner,
-                &out_ch_layout,           // out_ch_layout
-                out_sample_fmt as i32,    // out_sample_fmt
-                out_sample_rate as i32,   // out_sample_rate
-                &in_ch_layout,            // in_ch_layout
-                in_sample_fmt as i32,     // in_sample_fmt
-                in_sample_rate as i32,    // in_sample_rate
-                0,                        // log_offset
-                ptr::null_mut(),          // log_ctx
+                &out_ch_layout,         // out_ch_layout
+                out_sample_fmt as i32,  // out_sample_fmt
+                out_sample_rate as i32, // out_sample_rate
+                &in_ch_layout,          // in_ch_layout
+                in_sample_fmt as i32,   // in_sample_fmt
+                in_sample_rate as i32,  // in_sample_rate
+                0,                      // log_offset
+                ptr::null_mut(),        // log_ctx
             )
         };
 
@@ -89,7 +89,7 @@ impl SwrContext {
         }
 
         if ret < 0 {
-            return Err(FFmpegError::new(ret));
+            return Err(Error::new(ret));
         }
 
         let mut inner = unsafe { &mut *inner };
@@ -156,23 +156,17 @@ impl SwrContext {
         let ret = unsafe { sys::swr_init(inner) };
         if ret < 0 {
             unsafe { sys::swr_free(&mut inner as *mut _ as *mut _) };
-            return Err(FFmpegError::new(ret));
+            return Err(Error::new(ret));
         }
 
         Ok(SwrContext { inner })
     }
 
     pub fn convert(&mut self, src: &Frame, dst: &mut Frame) -> Result<()> {
-        let ret = unsafe {
-            sys::swr_convert_frame(
-                self.inner,
-                dst.as_mut_ptr(),
-                src.as_ptr(),
-            )
-        };
+        let ret = unsafe { sys::swr_convert_frame(self.inner, dst.as_mut_ptr(), src.as_ptr()) };
 
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -184,33 +178,27 @@ impl SwrContext {
 
     pub fn convert_frame(&mut self, src: Option<&Frame>, dst: &mut Frame) -> Result<()> {
         let src_ptr = src.map_or(std::ptr::null(), |f| f.as_ptr());
-        let ret = unsafe {
-            sys::swr_convert_frame(
-                self.inner,
-                dst.as_mut_ptr(),
-                src_ptr,
-            )
-        };
+        let ret = unsafe { sys::swr_convert_frame(self.inner, dst.as_mut_ptr(), src_ptr) };
 
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
     }
 
-    pub fn get_out_samples(&self, in_samples: i32) -> i32 {
+    pub fn get_out_samples(&self, in_samples: i64) -> i64 {
         unsafe {
             sys::av_rescale_rnd(
-                in_samples as i64,
-                self.get_out_rate() as i64,
-                self.get_in_rate() as i64,
+                in_samples,
+                self.get_out_rate(),
+                self.get_in_rate(),
                 sys::AVRounding_AV_ROUND_UP,
-            ) as i32
+            )
         }
     }
 
-    pub fn get_in_rate(&self) -> i32 {
+    pub fn get_in_rate(&self) -> i64 {
         unsafe {
             let mut rate = 0;
             sys::av_opt_get_int(
@@ -219,11 +207,11 @@ impl SwrContext {
                 0,
                 &mut rate,
             );
-            rate as i32
+            rate
         }
     }
 
-    pub fn get_out_rate(&self) -> i32 {
+    pub fn get_out_rate(&self) -> i64 {
         unsafe {
             let mut rate = 0;
             sys::av_opt_get_int(
@@ -232,21 +220,20 @@ impl SwrContext {
                 0,
                 &mut rate,
             );
-            rate as i32
+            rate
         }
     }
 
-    pub fn set_compensation(&mut self, sample_delta: i32, compensation_distance: i32) -> Result<()> {
-        let ret = unsafe {
-            sys::swr_set_compensation(
-                self.inner,
-                sample_delta,
-                compensation_distance,
-            )
-        };
+    pub fn set_compensation(
+        &mut self,
+        sample_delta: i32,
+        compensation_distance: i32,
+    ) -> Result<()> {
+        let ret =
+            unsafe { sys::swr_set_compensation(self.inner, sample_delta, compensation_distance) };
 
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -255,7 +242,7 @@ impl SwrContext {
     pub fn drop_output(&mut self, count: i32) -> Result<()> {
         let ret = unsafe { sys::swr_drop_output(self.inner, count) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -264,7 +251,7 @@ impl SwrContext {
     pub fn inject_silence(&mut self, count: i32) -> Result<()> {
         let ret = unsafe { sys::swr_inject_silence(self.inner, count) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -277,4 +264,4 @@ impl Drop for SwrContext {
             sys::swr_free(&mut self.inner);
         }
     }
-} 
+}

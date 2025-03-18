@@ -35,7 +35,7 @@ mod tracing_support {
         _avcl: *mut c_void,
         level: i32,
         fmt: *const i8,
-        args: sys::va_list,
+        args: *mut c_void,
     ) {
         let level = AVLogLevel::from_i32(level).unwrap();
         let level = match level {
@@ -47,14 +47,13 @@ mod tracing_support {
             AVLogLevel::Verbose => tracing::Level::DEBUG,
             AVLogLevel::Debug => tracing::Level::DEBUG,
             AVLogLevel::Trace => tracing::Level::TRACE,
-            AVLogLevel::Quiet => tracing::Level::TRACE,
         };
 
         let mut buffer = [0; 1024];
         let buffer_ptr = buffer.as_mut_ptr();
 
         unsafe {
-            sys::avrs_format_msg(buffer_ptr, buffer.len() as i32, fmt, args);
+            sys::avrs_format_msg(buffer_ptr, buffer.len() as i32, fmt, args as _);
         }
 
         let msg = unsafe { CStr::from_ptr(buffer_ptr).to_string_lossy() };
@@ -72,7 +71,10 @@ mod tracing_support {
     pub fn setup_tracing() {
         unsafe {
             sys::av_log_set_level(AVLogLevel::Trace as i32);
-            sys::av_log_set_callback(Some(av_tracing_log_callback));
+            // weird shenanigans with casting b/c va_list type generates
+            // different bindings on different platforms, so we just use *void
+            // instead
+            sys::av_log_set_callback(Some(std::mem::transmute(av_tracing_log_callback as *const ())));
         }
     }
 }

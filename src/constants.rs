@@ -1,7 +1,6 @@
 use libavcodec_sys::*;
 use num_derive::FromPrimitive;
 
-
 #[cfg_attr(windows, repr(i32))]
 #[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1583,4 +1582,22 @@ pub enum AVLogLevel {
     Trace = AV_LOG_TRACE as i32,
 }
 
-pub const EAGAIN: i32 = -11;
+#[repr(i32)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
+pub enum AVError {
+    BsfNotFound = AVError_BSF_NOT_FOUND,
+    Bug = AVError_BUG,
+    BufferTooSmall = AVError_BUFFER_TOO_SMALL,
+    DecoderNotFound = AVError_DECODER_NOT_FOUND,
+    DemuxerNotFound = AVError_DEMUXER_NOT_FOUND,
+    EncoderNotFound = AVError_ENCODER_NOT_FOUND,
+    Eof = AVError_EEOF,
+    Exit = AVError_EXIT,
+    External = AVError_EXTERNAL,
+    FilterNotFound = AVError_FILTER_NOT_FOUND,
+    InvalidData = AVError_INVALIDDATA,
+    MuxerNotFound = AVError_MUXER_NOT_FOUND,
+    OptionNotFound = AVError_OPTION_NOT_FOUND,
+    PatchWelcome = AVError_PATCHWELCOME,
+    ProtocolNotFound = AVError_PROTOCOL_NOT_FOUND,
+}

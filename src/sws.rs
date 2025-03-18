@@ -1,5 +1,5 @@
 use crate::AVPixelFormat;
-use crate::error::{FFmpegError, Result};
+use crate::error::{Error, Result};
 use crate::frame::Frame;
 use libavcodec_sys as sys;
 use std::ptr;
@@ -36,7 +36,7 @@ impl SwsContext {
         };
 
         if inner.is_null() {
-            Err(FFmpegError::new(-1))
+            Err(Error::Alloc)
         } else {
             Ok(SwsContext { inner })
         }
@@ -56,7 +56,7 @@ impl SwsContext {
         };
 
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }

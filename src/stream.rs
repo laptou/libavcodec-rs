@@ -4,7 +4,7 @@ use std::time::Duration;
 use libavcodec_sys as sys;
 use num_traits::FromPrimitive;
 
-use crate::{AVCodecId, AVMediaType, AVSampleFormat, CodecContext, FFmpegError, Rational};
+use crate::{AVCodecId, AVMediaType, AVSampleFormat, CodecContext, Error, Rational};
 
 pub struct Stream {
     pub(crate) inner: NonNull<sys::AVStream>,
@@ -75,7 +75,7 @@ impl Stream {
             unsafe { sys::avcodec_parameters_to_context(codec_ctx.as_mut_ptr(), self.codecpar()) };
 
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }

@@ -1,21 +1,47 @@
-use std::error::Error;
 use std::fmt;
-use std::result;
 
-pub type Result<T> = result::Result<T, FFmpegError>;
+use num_traits::FromPrimitive;
+use thiserror::Error;
 
-#[derive(Debug)]
-pub struct FFmpegError {
-    pub code: i32,
-    pub message: String,
+use crate::AVError;
+use crate::constants;
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error(transparent)]
+    Av(AVError),
+
+    #[error(transparent)]
+    Io(std::io::Error),
+
+    #[error("the object could not be allocated")]
+    Alloc,
+
+    #[error("the string was not valid utf-8")]
+    Utf8,
+
+    #[error("the string contained a nul byte")]
+    NulByte,
 }
 
-impl FFmpegError {
+impl Error {
     pub fn new(code: i32) -> Self {
+        if let Some(av_err) = constants::AVError::from_i32(code) {
+            return Self::Av(av_err);
+        }
+
+        return Self::Io(std::io::Error::from_raw_os_error(-code));
+    }
+}
+
+impl fmt::Display for AVError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let message = unsafe {
             let mut buffer = [0i8; 1024];
 
-            libavcodec_sys::av_strerror(code, buffer.as_mut_ptr(), buffer.len());
+            libavcodec_sys::av_strerror(*self as i32, buffer.as_mut_ptr(), buffer.len());
 
             String::from_utf8_lossy(
                 &buffer
@@ -27,14 +53,8 @@ impl FFmpegError {
             .into_owned()
         };
 
-        FFmpegError { code, message }
+        write!(f, "libav error {:?}: {}", self, message)
     }
 }
 
-impl fmt::Display for FFmpegError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "FFmpeg error {}: {}", self.code, self.message)
-    }
-}
-
-impl Error for FFmpegError {}
+impl std::error::Error for AVError {}

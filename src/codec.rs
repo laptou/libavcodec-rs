@@ -2,9 +2,10 @@ use crate::AVCodecId;
 use crate::AVDiscard;
 use crate::AVPixelFormat;
 use crate::AVSampleFormat;
-use crate::error::{FFmpegError, Result};
+use crate::error::{Result};
 use crate::frame::Frame;
 use crate::packet::Packet;
+use crate::Error;
 use crate::Rational;
 use libavcodec_sys as sys;
 use num_traits::FromPrimitive;
@@ -62,7 +63,7 @@ impl AsMut<sys::AVCodecContext> for CodecContext {
 impl CodecContext {
     pub fn new(codec: &Codec) -> Result<Self> {
         let inner = unsafe { sys::avcodec_alloc_context3(codec.as_ptr()) };
-        let inner = NonNull::new(inner).ok_or(FFmpegError::new(-1))?;
+        let inner = NonNull::new(inner).ok_or(Error::Alloc)?;
 
         Ok(CodecContext { inner })
     }
@@ -115,7 +116,7 @@ impl CodecContext {
     pub fn open(&mut self, codec: &Codec) -> Result<()> {
         let ret = unsafe { sys::avcodec_open2(self.as_mut(), codec.as_ptr(), ptr::null_mut()) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -124,7 +125,7 @@ impl CodecContext {
     pub fn send_packet(&mut self, packet: &Packet) -> Result<()> {
         let ret = unsafe { sys::avcodec_send_packet(self.as_mut(), packet.as_ref()) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -133,7 +134,7 @@ impl CodecContext {
     pub fn receive_frame(&mut self, frame: &mut Frame) -> Result<()> {
         let ret = unsafe { sys::avcodec_receive_frame(self.as_mut(), frame.as_mut_ptr()) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -165,7 +166,7 @@ impl CodecContext {
         let frame_ptr = frame.map_or(std::ptr::null(), |f| f.as_ptr());
         let ret = unsafe { sys::avcodec_send_frame(self.as_mut(), frame_ptr) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -174,7 +175,7 @@ impl CodecContext {
     pub fn receive_packet(&mut self, packet: &mut Packet) -> Result<()> {
         let ret = unsafe { sys::avcodec_receive_packet(self.as_mut(), packet.as_mut()) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }

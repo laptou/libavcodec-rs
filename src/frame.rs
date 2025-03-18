@@ -1,6 +1,5 @@
 use crate::{
-    AVPixelFormat, AVSampleFormat,
-    error::{FFmpegError, Result},
+    error::Result, AVError, AVPixelFormat, AVSampleFormat, Error
 };
 use libavcodec_sys as sys;
 use std::{ptr::NonNull, slice};
@@ -17,7 +16,7 @@ unsafe impl Send for Frame {}
 impl Frame {
     pub fn new() -> Result<Self> {
         let inner = unsafe { sys::av_frame_alloc() };
-        let inner = NonNull::new(inner).ok_or(FFmpegError::new(-1))?;
+        let inner = NonNull::new(inner).ok_or(Error::Alloc)?;
         Ok(Frame {
             inner,
             buffer: None,
@@ -41,7 +40,7 @@ impl Frame {
         // get required buffer size
         let size = unsafe { sys::av_image_get_buffer_size(pix_fmt, width, height, align) };
         if size < 0 {
-            return Err(FFmpegError::new(size));
+            return Err(Error::new(size));
         }
 
         // allocate buffer
@@ -65,7 +64,7 @@ impl Frame {
             );
 
             if ret < 0 {
-                return Err(FFmpegError::new(ret));
+                return Err(Error::new(ret));
             }
         }
 
@@ -105,7 +104,7 @@ impl Frame {
             );
 
             if ret < 0 {
-                return Err(FFmpegError::new(ret));
+                return Err(Error::new(ret));
             }
         }
         Ok(())
@@ -129,10 +128,42 @@ impl Frame {
             self.inner_mut().sample_rate = sample_rate;
             sys::av_channel_layout_default(&mut self.inner_mut().ch_layout, channel_count);
 
-            let ret = sys::av_frame_get_buffer(self.inner_mut(), 32);
-            if ret < 0 {
-                return Err(FFmpegError::new(ret));
+            let mut linesize = 0;
+            let size = sys::av_samples_get_buffer_size(
+                &mut linesize,
+                channel_count,
+                sample_count as i32,
+                sample_fmt as i32,
+                64, // Increased alignment
+            );
+
+            if size < 0 {
+                return Err(Error::new(size));
             }
+
+            let ret = sys::av_frame_get_buffer(self.inner_mut(), 64);
+            if ret < 0 {
+                return Err(Error::new(ret));
+            }
+
+            // // Set up frame data pointers
+            // let ret = {
+            //     let mut inner = self.inner_mut();
+
+            //     sys::av_samples_fill_arrays(
+            //         inner.data.as_mut_ptr(),
+            //         inner.linesize.as_mut_ptr(),
+            //         inner.data[0],
+            //         channel_count,
+            //         sample_count as i32,
+            //         sample_fmt as i32,
+            //         64, // Alignment
+            //     )
+            // };
+
+            // if ret < 0 {
+            //     return Err(Error::new(ret));
+            // }
         }
 
         Ok(())
@@ -277,7 +308,7 @@ impl Frame {
     pub fn make_writable(&mut self) -> Result<()> {
         let ret = unsafe { sys::av_frame_make_writable(self.inner_mut()) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -286,7 +317,7 @@ impl Frame {
     pub fn copy_props(&mut self, src: &Frame) -> Result<()> {
         let ret = unsafe { sys::av_frame_copy_props(self.inner_mut(), src.as_ptr()) };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(())
         }
@@ -304,7 +335,7 @@ impl Frame {
             )
         };
         if ret < 0 {
-            Err(FFmpegError::new(ret))
+            Err(Error::new(ret))
         } else {
             Ok(linesize)
         }
@@ -312,6 +343,12 @@ impl Frame {
 
     pub fn format(&self) -> i32 {
         self.inner().format
+    }
+
+    pub fn unref(&mut self) {
+        unsafe {
+            sys::av_frame_unref(self.inner.as_ptr());
+        }
     }
 }
 

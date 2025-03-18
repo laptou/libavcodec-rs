@@ -1,10 +1,11 @@
 use anyhow::Result;
 use clap::Parser;
 use libavcodec::{
-    AVCodecId, AVMediaType, AVSampleFormat, Codec, CodecContext, EAGAIN, FormatContext, Frame,
+    AVCodecId, AVError, AVMediaType, AVSampleFormat, Codec, CodecContext, FormatContext, Frame,
     Packet, ResampleAlgorithm, SwrContext,
 };
-use std::path::PathBuf;
+use std::{io::ErrorKind, path::PathBuf};
+use tracing_subscriber::EnvFilter;
 
 /// Audio downsampler that converts any audio file to WAV with specified sample rate
 #[derive(Parser)]
@@ -30,7 +31,9 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    tracing_subscriber::fmt().init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
     libavcodec::setup_tracing();
 
     // Open input file
@@ -128,7 +131,7 @@ fn main() -> Result<()> {
     // Create packet for reading and one for encoding output
     let mut packet = Packet::new()?;
     let mut enc_packet = Packet::new()?;
-    
+
     // Tracking variable for output pts
     let mut pts = 0i64;
 
@@ -142,10 +145,20 @@ fn main() -> Result<()> {
 
             // Receive frames from decoder
             loop {
+                input_frame.unref();
+
                 match input_codec_ctx.receive_frame(&mut input_frame) {
                     Ok(()) => {
+                        let delay_samples = swr_ctx.get_delay(in_sample_rate as i32);
+                        let base_samples = input_frame.sample_count() as i64;
                         // Calculate output frame size based on input frame and resampling ratio
-                        let out_samples = swr_ctx.get_out_samples(input_frame.sample_count());
+                        let out_samples = swr_ctx.get_out_samples(delay_samples + base_samples);
+
+                        tracing::trace!(
+                            "delay samples = {delay_samples} base samples = {base_samples} out samples = {out_samples}"
+                        );
+
+                        output_frame.unref();
 
                         // Set up output frame - allocate buffer BEFORE conversion
                         output_frame.allocate_audio_buffer(
@@ -172,32 +185,43 @@ fn main() -> Result<()> {
                         loop {
                             // Unref previous content before receiving new packet
                             enc_packet.unref();
-                            
+
                             match output_codec_ctx.receive_packet(&mut enc_packet) {
                                 Ok(()) => {
                                     enc_packet.set_stream_index(0);
-                                    
+
                                     // Calculate packet timestamps based on stream time base
-                                    if let Some(frame_pts) = if output_frame.pts() != -1 { Some(output_frame.pts()) } else { None } {
+                                    if let Some(frame_pts) = if output_frame.pts() != -1 {
+                                        Some(output_frame.pts())
+                                    } else {
+                                        None
+                                    } {
                                         let in_time_base = audio_stream.time_base();
                                         let out_time_base = output_stream.time_base();
-                                        
+
                                         // Rescale timestamps to output stream time base
                                         enc_packet.rescale_ts(
                                             output_codec_ctx.time_base().into(),
-                                            output_stream.time_base().into()
+                                            output_stream.time_base().into(),
                                         );
                                     }
-                                    
+
                                     // Write the packet
                                     output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
                                 }
-                                Err(e) if e.code == EAGAIN => break,
+                                Err(libavcodec::Error::Io(err))
+                                    if err.kind() == ErrorKind::WouldBlock =>
+                                {
+                                    break;
+                                }
                                 Err(e) => return Err(e.into()),
                             }
                         }
                     }
-                    Err(e) if e.code == EAGAIN => break,
+                    Err(libavcodec::Error::Av(AVError::Eof)) => break,
+                    Err(libavcodec::Error::Io(err)) if err.kind() == ErrorKind::WouldBlock => {
+                        break;
+                    }
                     Err(e) => return Err(e.into()),
                 }
             }
@@ -210,7 +234,9 @@ fn main() -> Result<()> {
         match input_codec_ctx.receive_frame(&mut input_frame) {
             Ok(()) => {
                 // Calculate output frame size based on input frame and resampling ratio
-                let out_samples = swr_ctx.get_out_samples(input_frame.sample_count());
+                let out_samples = swr_ctx.get_out_samples(
+                    swr_ctx.get_delay(in_sample_rate as i32) + input_frame.sample_count() as i64,
+                );
 
                 // Set up output frame - allocate buffer BEFORE conversion
                 output_frame.allocate_audio_buffer(
@@ -237,29 +263,38 @@ fn main() -> Result<()> {
                 loop {
                     // Unref previous content
                     enc_packet.unref();
-                    
+
                     match output_codec_ctx.receive_packet(&mut enc_packet) {
                         Ok(()) => {
                             enc_packet.set_stream_index(0);
-                            
+
                             // Calculate packet timestamps
-                            if let Some(frame_pts) = if output_frame.pts() != -1 { Some(output_frame.pts()) } else { None } {
+                            if let Some(frame_pts) = if output_frame.pts() != -1 {
+                                Some(output_frame.pts())
+                            } else {
+                                None
+                            } {
                                 // Rescale timestamps to output stream time base
                                 enc_packet.rescale_ts(
                                     output_codec_ctx.time_base().into(),
-                                    output_stream.time_base().into()
+                                    output_stream.time_base().into(),
                                 );
                             }
-                            
+
                             // Write the packet
                             output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
                         }
-                        Err(e) if e.code == EAGAIN => break,
+                        Err(libavcodec::Error::Io(err)) if err.kind() == ErrorKind::WouldBlock => {
+                            break;
+                        }
                         Err(e) => return Err(e.into()),
                     }
                 }
             }
-            Err(e) if e.code == EAGAIN => break,
+            Err(libavcodec::Error::Av(AVError::Eof)) => break,
+            Err(libavcodec::Error::Io(err)) if err.kind() == ErrorKind::WouldBlock => {
+                break;
+            }
             Err(e) => return Err(e.into()),
         }
     }
@@ -269,21 +304,24 @@ fn main() -> Result<()> {
     loop {
         // Unref previous content
         enc_packet.unref();
-        
+
         match output_codec_ctx.receive_packet(&mut enc_packet) {
             Ok(()) => {
                 enc_packet.set_stream_index(0);
-                
+
                 // Rescale timestamps to output stream time base
                 enc_packet.rescale_ts(
                     output_codec_ctx.time_base().into(),
-                    output_stream.time_base().into()
+                    output_stream.time_base().into(),
                 );
-                
+
                 // Write the packet
                 output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
             }
-            Err(e) if e.code == EAGAIN => break,
+            Err(libavcodec::Error::Av(AVError::Eof)) => break,
+            Err(libavcodec::Error::Io(err)) if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::UnexpectedEof) => {
+                break;
+            }
             Err(e) => return Err(e.into()),
         }
     }
