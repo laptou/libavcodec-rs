@@ -58,14 +58,12 @@ impl SwrContext {
         let mut in_ch_layout = unsafe { std::mem::zeroed::<sys::AVChannelLayout>() };
         let mut out_ch_layout = unsafe { std::mem::zeroed::<sys::AVChannelLayout>() };
 
-        unsafe {
-            // Initialize channel layouts with just channel counts
-            in_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
-            in_ch_layout.nb_channels = in_channel_count as i32;
+        // Initialize channel layouts with just channel counts
+        in_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
+        in_ch_layout.nb_channels = in_channel_count as i32;
 
-            out_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
-            out_ch_layout.nb_channels = out_channel_count as i32;
-        }
+        out_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
+        out_ch_layout.nb_channels = out_channel_count as i32;
 
         let mut inner = ptr::null_mut();
         let ret = unsafe {

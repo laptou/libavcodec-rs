@@ -188,21 +188,11 @@ fn main() -> Result<()> {
                                 Ok(()) => {
                                     enc_packet.set_stream_index(0);
 
-                                    // Calculate packet timestamps based on stream time base
-                                    if let Some(frame_pts) = if output_frame.pts() != -1 {
-                                        Some(output_frame.pts())
-                                    } else {
-                                        None
-                                    } {
-                                        let in_time_base = audio_stream.time_base();
-                                        let out_time_base = output_stream.time_base();
-
-                                        // Rescale timestamps to output stream time base
-                                        enc_packet.rescale_ts(
-                                            output_codec_ctx.time_base().into(),
-                                            output_stream.time_base().into(),
-                                        );
-                                    }
+                                    // Rescale timestamps to output stream time base
+                                    enc_packet.rescale_ts(
+                                        output_codec_ctx.time_base().into(),
+                                        output_stream.time_base().into(),
+                                    );
 
                                     // Write the packet
                                     output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
@@ -266,18 +256,11 @@ fn main() -> Result<()> {
                         Ok(()) => {
                             enc_packet.set_stream_index(0);
 
-                            // Calculate packet timestamps
-                            if let Some(frame_pts) = if output_frame.pts() != -1 {
-                                Some(output_frame.pts())
-                            } else {
-                                None
-                            } {
-                                // Rescale timestamps to output stream time base
-                                enc_packet.rescale_ts(
-                                    output_codec_ctx.time_base().into(),
-                                    output_stream.time_base().into(),
-                                );
-                            }
+                            // Rescale timestamps to output stream time base
+                            enc_packet.rescale_ts(
+                                output_codec_ctx.time_base().into(),
+                                output_stream.time_base().into(),
+                            );
 
                             // Write the packet
                             output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
