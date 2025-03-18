@@ -1,8 +1,10 @@
 use libavcodec_sys::*;
 use num_derive::FromPrimitive;
 
+
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
 pub enum AVAudioServiceType {
     Commentary = AVAudioServiceType_AV_AUDIO_SERVICE_TYPE_COMMENTARY,
     Dialogue = AVAudioServiceType_AV_AUDIO_SERVICE_TYPE_DIALOGUE,
@@ -17,7 +19,8 @@ pub enum AVAudioServiceType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 pub enum AVChannelOrder {
     Ambisonic = AVChannelOrder_AV_CHANNEL_ORDER_AMBISONIC,
     Custom = AVChannelOrder_AV_CHANNEL_ORDER_CUSTOM,
@@ -71,7 +74,8 @@ pub enum AVChannel {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 pub enum AVChromaLocation {
     Bottom = AVChromaLocation_AVCHROMA_LOC_BOTTOM,
     BottomLeft = AVChromaLocation_AVCHROMA_LOC_BOTTOMLEFT,
@@ -84,7 +88,8 @@ pub enum AVChromaLocation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 pub enum AVClassCategory {
     BitstreamFilter = AVClassCategory_AV_CLASS_CATEGORY_BITSTREAM_FILTER,
     Decoder = AVClassCategory_AV_CLASS_CATEGORY_DECODER,
@@ -106,7 +111,8 @@ pub enum AVClassCategory {
     Swscaler = AVClassCategory_AV_CLASS_CATEGORY_SWSCALER,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 pub enum AVCodecId {
     _012v = AVCodecID_AV_CODEC_ID_012V,
@@ -645,7 +651,8 @@ pub enum AVCodecId {
     Zmbv = AVCodecID_AV_CODEC_ID_ZMBV,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AVColorPrimaries {
     /// also ITU-R BT1361 / IEC 61966-2-4 / SMPTE RP 177 Annex B
@@ -677,7 +684,8 @@ pub enum AVColorPrimaries {
     Unspecified = AVColorPrimaries_AVCOL_PRI_UNSPECIFIED,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AVColorRange {
     /// Full range content
@@ -689,7 +697,8 @@ pub enum AVColorRange {
     Unspecified = AVColorRange_AVCOL_RANGE_UNSPECIFIED,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AVColorSpace {
     /// also ITU-R BT1361 / IEC 61966-2-4 xvYCC709 / derived in SMPTE RP 177 Annex B
@@ -731,7 +740,8 @@ pub enum AVColorSpace {
     YcgcoRo = AVColorSpace_AVCOL_SPC_YCGCO_RO,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AVColorTransferCharacteristic {
     /// ARIB STD-B67, known as "Hybrid log-gamma"
@@ -791,7 +801,8 @@ pub enum AVDiscard {
     NonRef = AVDiscard_AVDISCARD_NONREF,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AVFieldOrder {
     /// Bottom coded first, bottom displayed first
@@ -806,7 +817,8 @@ pub enum AVFieldOrder {
     Unknown = AVFieldOrder_AV_FIELD_UNKNOWN,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AVFrameSideDataType {
     /// ATSC A53 Part 4 Closed Captions. A53 CC bitstream is stored as uint8_t in AVFrameSideData.data. The number of bytes of CC data is AVFrameSideData.size.
@@ -886,7 +898,8 @@ pub enum AVMediaType {
     Video = AVMediaType_AVMEDIA_TYPE_VIDEO,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AVOptionType {
     /// Underlying C type is a uint8_t* that is either NULL or points to an array allocated with the av_malloc() family of functions. The pointer is immediately followed by an int containing the array length in bytes.
@@ -933,7 +946,8 @@ pub enum AVOptionType {
     VideoRate = AVOptionType_AV_OPT_TYPE_VIDEO_RATE,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AVPacketSideDataType {
     /// ATSC A53 Part 4 Closed Captions. This metadata should be associated with a video stream. A53 CC bitstream is stored as uint8_t in AVPacketSideData.data. The number of bytes of CC data is AVPacketSideData.size.
@@ -1017,7 +1031,8 @@ pub enum AVPacketSideDataType {
     WebvttSettings = AVPacketSideDataType_AV_PKT_DATA_WEBVTT_SETTINGS,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AVPictureStructure {
     /// coded as bottom field
@@ -1030,7 +1045,8 @@ pub enum AVPictureStructure {
     Unknown = AVPictureStructure_AV_PICTURE_STRUCTURE_UNKNOWN,
 }
 
-#[repr(i32)]
+#[cfg_attr(windows, repr(i32))]
+#[cfg_attr(unix, repr(u32))]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum AVPictureType {
     /// Bi-dir predicted
@@ -1549,8 +1565,6 @@ pub enum AVSampleFormat {
 #[repr(i32)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, FromPrimitive)]
 pub enum AVLogLevel {
-    /// No log level
-    Quiet = AV_LOG_QUIET,
     /// Panic
     Panic = AV_LOG_PANIC as i32,
     /// Fatal

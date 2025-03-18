@@ -19,7 +19,7 @@ unsafe impl Send for Codec {}
 
 impl Codec {
     pub fn find_decoder(id: AVCodecId) -> Option<Self> {
-        let inner = unsafe { sys::avcodec_find_decoder(id as i32) };
+        let inner = unsafe { sys::avcodec_find_decoder(id as _) };
         if inner.is_null() {
             None
         } else {
@@ -28,7 +28,7 @@ impl Codec {
     }
 
     pub fn find_encoder(id: AVCodecId) -> Option<Self> {
-        let inner = unsafe { sys::avcodec_find_encoder(id as i32) };
+        let inner = unsafe { sys::avcodec_find_encoder(id as _) };
         if inner.is_null() {
             None
         } else {

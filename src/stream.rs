@@ -64,7 +64,7 @@ impl Stream {
     }
 
     pub fn codec_id(&self) -> AVCodecId {
-        AVCodecId::from_i32(unsafe { (*self.as_ref().codecpar).codec_id }).unwrap()
+        AVCodecId::from_i32(unsafe { (*self.as_ref().codecpar).codec_id as i32 }).unwrap()
     }
 
     pub fn apply_parameters_to_context(
@@ -92,7 +92,7 @@ impl Stream {
         unsafe {
             let codecpar = self.codecpar();
             codecpar.codec_type = codec_type as i32;
-            codecpar.codec_id = codec_id as i32;
+            codecpar.codec_id = codec_id as _;
             codecpar.sample_rate = sample_rate as i32;
             codecpar.format = sample_fmt as i32;
             codecpar.bit_rate = (sample_rate * 16) as i64; // 16 bits per sample
