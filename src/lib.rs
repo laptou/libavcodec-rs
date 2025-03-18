@@ -58,13 +58,14 @@ mod tracing_support {
         }
 
         let msg = unsafe { CStr::from_ptr(buffer_ptr).to_string_lossy() };
+        let msg = msg.trim();
 
         match level {
-            tracing::Level::ERROR => tracing::error!(target: "libav", "{}", msg),
-            tracing::Level::WARN => tracing::warn!(target: "libav", "{}", msg),
-            tracing::Level::INFO => tracing::info!(target: "libav", "{}", msg),
-            tracing::Level::DEBUG => tracing::debug!(target: "libav", "{}", msg),
-            tracing::Level::TRACE => tracing::trace!(target: "libav", "{}", msg),
+            tracing::Level::ERROR => tracing::error!(target: "libavcodec", "{}", msg),
+            tracing::Level::WARN => tracing::warn!(target: "libavcodec", "{}", msg),
+            tracing::Level::INFO => tracing::info!(target: "libavcodec", "{}", msg),
+            tracing::Level::DEBUG => tracing::debug!(target: "libavcodec", "{}", msg),
+            tracing::Level::TRACE => tracing::trace!(target: "libavcodec", "{}", msg),
         }
     }
 

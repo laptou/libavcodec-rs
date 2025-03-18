@@ -1,12 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
 use libavcodec::{
-    AVMediaType, AVSampleFormat, Codec, CodecContext, EAGAIN, FormatContext, Frame, Packet,
-    SwrContext
+    AVCodecId, AVMediaType, AVSampleFormat, Codec, CodecContext, EAGAIN, FormatContext, Frame, Packet,
+    SwrContext, ResampleAlgorithm
 };
-use libavcodec_sys::{self as sys, AVIO_FLAG_WRITE};
-use std::{ffi::CString, path::PathBuf, ptr};
-
+use std::{path::PathBuf};
 
 /// Audio downsampler that converts any audio file to WAV with specified sample rate
 #[derive(Parser)]
@@ -39,13 +37,14 @@ fn main() -> Result<()> {
     let mut input_format_ctx = FormatContext::open(&args.input)?;
 
     // Find audio stream
-    let audio_stream = input_format_ctx
+    let mut audio_stream = input_format_ctx
         .streams()
         .find(|s| matches!(s.codec_type(), AVMediaType::Audio))
-        .expect("no audio stream found");
+        .ok_or_else(|| anyhow::anyhow!("no audio stream found"))?;
 
     // Get decoder
-    let decoder = Codec::find_decoder(audio_stream.codec_id()).expect("failed to find decoder");
+    let decoder = Codec::find_decoder(audio_stream.codec_id())
+        .ok_or_else(|| anyhow::anyhow!("failed to find decoder"))?;
 
     // Create decoder context
     let mut input_codec_ctx = CodecContext::new(&decoder)?;
@@ -65,8 +64,8 @@ fn main() -> Result<()> {
     );
 
     // Set output format details
-    let out_sample_rate = args.sample_rate as usize;
-    let out_channels = args.channels as usize;
+    let out_sample_rate = args.sample_rate as i32;
+    let out_channels = args.channels as i32;
     let out_sample_fmt = AVSampleFormat::S16; // 16-bit signed PCM for WAV
 
     println!(
@@ -75,97 +74,42 @@ fn main() -> Result<()> {
     );
 
     // Create output format context for WAV
-    let mut output_format_ctx = unsafe {
-        let path_cstr = CString::new(args.output.to_str().unwrap()).unwrap();
-        let mut ctx = ptr::null_mut();
-        let ret = sys::avformat_alloc_output_context2(
-            &mut ctx,
-            ptr::null_mut(),
-            b"wav\0".as_ptr() as *const i8,
-            path_cstr.as_ptr(),
-        );
-        if ret < 0 {
-            return Err(anyhow::anyhow!("Failed to create output context"));
-        }
-        ctx
-    };
-
-    // Find WAV encoder
-    let encoder = unsafe {
-        let encoder = sys::avcodec_find_encoder(sys::AVCodecID_AV_CODEC_ID_PCM_S16LE);
-        if encoder.is_null() {
-            return Err(anyhow::anyhow!("Failed to find WAV encoder"));
-        }
-        encoder
-    };
+    let mut output_format_ctx = FormatContext::output(&args.output, Some("wav"))?;
 
     // Create output stream
-    let output_stream = unsafe {
-        let stream = sys::avformat_new_stream(output_format_ctx, encoder);
-        if stream.is_null() {
-            return Err(anyhow::anyhow!("Failed to create output stream"));
-        }
-        stream
-    };
-
+    let mut output_stream = output_format_ctx.new_stream()?;
+    
     // Set output codec parameters
-    unsafe {
-        let codec_params = (*output_stream).codecpar;
-        (*codec_params).codec_type = sys::AVMediaType_AVMEDIA_TYPE_AUDIO;
-        (*codec_params).codec_id = sys::AVCodecID_AV_CODEC_ID_PCM_S16LE;
-        (*codec_params).sample_rate = out_sample_rate as i32;
-        (*codec_params).format = sys::AVSampleFormat_AV_SAMPLE_FMT_S16 as i32;
-        (*codec_params).bit_rate = out_sample_rate as i64 * 16; // 16 bits per sample
-        sys::av_channel_layout_default(&mut (*codec_params).ch_layout, out_channels as i32);
-    }
-
-    // Set stream time base
-    unsafe {
-        (*output_stream).time_base = sys::AVRational {
-            num: 1,
-            den: out_sample_rate as i32,
-        };
-    }
-
-    // Open output file
-    let path_cstr = CString::new(args.output.to_str().unwrap()).unwrap();
-    let ret = unsafe {
-        sys::avio_open2(
-            &mut (*output_format_ctx).pb,
-            path_cstr.as_ptr(),
-            AVIO_FLAG_WRITE,
-            ptr::null(),
-            ptr::null_mut(),
-        )
-    };
-    if ret < 0 {
-        return Err(anyhow::anyhow!("Failed to open output file"));
-    }
+    output_stream.set_audio_codec_params(
+        AVMediaType::Audio,
+        AVCodecId::PcmS16le,
+        out_sample_rate as usize,
+        out_channels as usize,
+        out_sample_fmt,
+    )?;
 
     // Write header
-    let ret = unsafe { sys::avformat_write_header(output_format_ctx, ptr::null_mut()) };
-    if ret < 0 {
-        return Err(anyhow::anyhow!("Failed to write header"));
-    }
-
-    // Create resampler context
-    let mut swr_ctx = SwrContext::get_context(
-        in_sample_rate,
-        in_sample_fmt,
-        in_channels,
-        out_sample_rate,
-        out_sample_fmt,
-        out_channels,
-    )?;
+    output_format_ctx.write_header()?;
 
     // Create frames
     let mut input_frame = Frame::new()?;
     let mut output_frame = Frame::new()?;
 
     // Set up output frame parameters
-    output_frame.set_channel_count(out_channels as i32);
+    output_frame.set_channel_count(out_channels);
     output_frame.set_format(out_sample_fmt as i32);
-    output_frame.set_sample_rate(out_sample_rate as i32);
+    output_frame.set_sample_rate(out_sample_rate);
+
+    // Create resampler context with proper channel layouts
+    let mut swr_ctx = SwrContext::get_context_with_algorithm(
+        in_sample_rate as usize,
+        in_sample_fmt,
+        in_channels as usize,
+        out_sample_rate as usize,
+        out_sample_fmt,
+        out_channels as usize,
+        ResampleAlgorithm::Sinc { quality: 5 }, // Use higher quality resampling
+    )?;
 
     // Create packet for reading
     let mut packet = Packet::new()?;
@@ -183,13 +127,16 @@ fn main() -> Result<()> {
                         // Calculate output frame size based on input frame and resampling ratio
                         let out_samples = swr_ctx.get_out_samples(input_frame.sample_count());
 
-                        // Set up output frame
+                        // Set up output frame - allocate buffer BEFORE conversion
                         output_frame.allocate_audio_buffer(
-                            out_channels,
-                            out_sample_rate,
+                            out_channels as usize,
+                            out_sample_rate as usize,
                             out_samples as usize,
                             out_sample_fmt,
                         )?;
+
+                        // Ensure frame is writable before conversion
+                        output_frame.make_writable()?;
 
                         // Convert audio
                         swr_ctx.convert_frame(Some(&input_frame), &mut output_frame)?;
@@ -197,62 +144,22 @@ fn main() -> Result<()> {
                         // Calculate timestamps
                         if input_frame.pts() != -1 {
                             let pts = input_frame.pts();
-                            let in_time_base = unsafe { (*audio_stream).time_base };
-                            let out_time_base = unsafe { (*output_stream).time_base };
-                            let out_pts = unsafe {
-                                sys::av_rescale_q(
-                                    pts,
-                                    in_time_base,
-                                    out_time_base,
-                                )
-                            };
+                            let in_time_base = audio_stream.time_base();
+                            let out_time_base = output_stream.time_base();
+                            let out_pts = pts * (out_time_base.den() as i64) * (in_time_base.num() as i64) 
+                                / ((in_time_base.den() as i64) * (out_time_base.num() as i64));
                             output_frame.set_pts(out_pts);
                         }
 
-                        // Encode the resampled frame
-                        unsafe {
-                            let ret = sys::avcodec_send_frame(
-                                output_stream.as_mut_ptr().codecpar.codec,
-                                output_frame.as_ptr(),
-                            );
-                            if ret < 0 {
-                                return Err(FFmpegError::new(ret).into());
-                            }
-                        }
+                        // Create packet for writing
+                        let mut enc_packet = Packet::new()?;
+                        enc_packet.set_stream_index(0);
 
-                        // Get encoded packets
-                        loop {
-                            let mut enc_packet = Packet::new()?;
-                            let ret = unsafe {
-                                sys::avcodec_receive_packet(
-                                    output_stream.as_mut_ptr().codecpar.codec,
-                                    enc_packet.as_mut_ptr(),
-                                )
-                            };
-                            match ret {
-                                0 => {
-                                    // Set stream index
-                                    enc_packet.set_stream_index(0);
+                        // Write the frame
+                        output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
 
-                                    // Rescale packet timestamps
-                                    unsafe {
-                                        sys::av_packet_rescale_ts(
-                                            enc_packet.as_mut_ptr(),
-                                            (*output_stream.as_mut_ptr().codecpar.codec).time_base,
-                                            output_stream.time_base(),
-                                        );
-                                    }
-
-                                    // Write the packet
-                                    let ret = unsafe { sys::av_interleaved_write_frame(output_format_ctx, enc_packet.as_ptr()) };
-                                    if ret < 0 {
-                                        return Err(anyhow::anyhow!("Failed to write frame"));
-                                    }
-                                }
-                                err if err == EAGAIN => break,
-                                err => return Err(FFmpegError::new(err).into()),
-                            }
-                        }
+                        // The frames will be automatically cleaned up when they go out of scope
+                        // No need for explicit unref calls in Rust
                     }
                     Err(e) if e.code == EAGAIN => break,
                     Err(e) => return Err(e.into()),
@@ -270,112 +177,47 @@ fn main() -> Result<()> {
                 // Calculate output frame size based on input frame and resampling ratio
                 let out_samples = swr_ctx.get_out_samples(input_frame.sample_count());
 
-                // Set up output frame
+                // Set up output frame - allocate buffer BEFORE conversion
                 output_frame.allocate_audio_buffer(
-                    out_channels,
-                    out_sample_rate,
+                    out_channels as usize,
+                    out_sample_rate as usize,
                     out_samples as usize,
                     out_sample_fmt,
                 )?;
 
+                // Ensure frame is writable before conversion
+                output_frame.make_writable()?;
+
                 // Convert audio
                 swr_ctx.convert_frame(Some(&input_frame), &mut output_frame)?;
 
-                // Encode the resampled frame
-                unsafe {
-                    let ret = sys::avcodec_send_frame(
-                        output_stream.as_mut_ptr().codecpar.codec,
-                        output_frame.as_ptr(),
-                    );
-                    if ret < 0 {
-                        return Err(FFmpegError::new(ret).into());
-                    }
+                // Calculate timestamps
+                if input_frame.pts() != -1 {
+                    let pts = input_frame.pts();
+                    let in_time_base = audio_stream.time_base();
+                    let out_time_base = output_stream.time_base();
+                    let out_pts = pts * (out_time_base.den() as i64) * (in_time_base.num() as i64) 
+                        / ((in_time_base.den() as i64) * (out_time_base.num() as i64));
+                    output_frame.set_pts(out_pts);
                 }
 
-                // Get encoded packets
-                loop {
-                    let mut enc_packet = Packet::new()?;
-                    let ret = unsafe {
-                        sys::avcodec_receive_packet(
-                            output_stream.as_mut_ptr().codecpar.codec,
-                            enc_packet.as_mut_ptr(),
-                        )
-                    };
-                    match ret {
-                        0 => {
-                            // Set stream index
-                            enc_packet.set_stream_index(0);
+                // Create packet for writing
+                let mut enc_packet = Packet::new()?;
+                enc_packet.set_stream_index(0);
 
-                            // Rescale packet timestamps
-                            unsafe {
-                                sys::av_packet_rescale_ts(
-                                    enc_packet.as_mut_ptr(),
-                                    (*output_stream.as_mut_ptr().codecpar.codec).time_base,
-                                    output_stream.time_base(),
-                                );
-                            }
+                // Write the frame
+                output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
 
-                            // Write the packet
-                            let ret = unsafe { sys::av_interleaved_write_frame(output_format_ctx, enc_packet.as_ptr()) };
-                            if ret < 0 {
-                                return Err(anyhow::anyhow!("Failed to write frame"));
-                            }
-                        }
-                        err if err == EAGAIN => break,
-                        err => return Err(FFmpegError::new(err).into()),
-                    }
-                }
+                // The frames will be automatically cleaned up when they go out of scope
+                // No need for explicit unref calls in Rust
             }
             Err(e) if e.code == EAGAIN => break,
             Err(e) => return Err(e.into()),
         }
     }
 
-    // Flush the encoder
-    unsafe {
-        let ret = sys::avcodec_send_frame(output_stream.as_mut_ptr().codecpar.codec, std::ptr::null());
-        if ret < 0 {
-            return Err(FFmpegError::new(ret).into());
-        }
-    }
-    loop {
-        let mut enc_packet = Packet::new()?;
-        let ret = unsafe {
-            sys::avcodec_receive_packet(
-                output_stream.as_mut_ptr().codecpar.codec,
-                enc_packet.as_mut_ptr(),
-            )
-        };
-        match ret {
-            0 => {
-                // Set stream index
-                enc_packet.set_stream_index(0);
-
-                // Rescale packet timestamps
-                unsafe {
-                    sys::av_packet_rescale_ts(
-                        enc_packet.as_mut_ptr(),
-                        (*output_stream.as_mut_ptr().codecpar.codec).time_base,
-                        output_stream.time_base(),
-                    );
-                }
-
-                // Write the packet
-                let ret = unsafe { sys::av_interleaved_write_frame(output_format_ctx, enc_packet.as_ptr()) };
-                if ret < 0 {
-                    return Err(anyhow::anyhow!("Failed to write frame"));
-                }
-            }
-            err if err == EAGAIN => break,
-            err => return Err(FFmpegError::new(err).into()),
-        }
-    }
-
     // Write trailer
-    let ret = unsafe { sys::av_write_trailer(output_format_ctx) };
-    if ret < 0 {
-        return Err(anyhow::anyhow!("Failed to write trailer"));
-    }
+    output_format_ctx.write_trailer()?;
 
     println!(
         "Conversion complete! Output saved to: {}",

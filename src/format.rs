@@ -69,7 +69,9 @@ impl FormatContext {
         let streams =
             unsafe { std::slice::from_raw_parts(self.as_ref().streams, nb_streams as usize) };
 
-        streams.iter().map(|&ptr| Stream { inner: ptr })
+        streams.iter().map(|&ptr| Stream {
+            inner: NonNull::new(ptr).unwrap(),
+        })
     }
 
     pub fn read_packet(&mut self, packet: &mut Packet) -> Result<bool> {
@@ -166,6 +168,13 @@ impl FormatContext {
         } else {
             Ok(())
         }
+    }
+
+    pub fn new_stream(&mut self) -> Result<Stream> {
+        let stream = unsafe { sys::avformat_new_stream(self.inner.as_ptr(), ptr::null()) };
+        let stream = NonNull::new(stream).ok_or(FFmpegError::new(-1))?;
+
+        Ok(Stream { inner: stream })
     }
 }
 
