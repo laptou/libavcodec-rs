@@ -2,11 +2,11 @@ use crate::AVCodecId;
 use crate::AVDiscard;
 use crate::AVPixelFormat;
 use crate::AVSampleFormat;
-use crate::error::{Result};
-use crate::frame::Frame;
-use crate::packet::Packet;
 use crate::Error;
 use crate::Rational;
+use crate::error::Result;
+use crate::frame::Frame;
+use crate::packet::Packet;
 use libavcodec_sys as sys;
 use num_traits::FromPrimitive;
 use std::ptr;
@@ -184,8 +184,6 @@ impl CodecContext {
 
 impl Drop for CodecContext {
     fn drop(&mut self) {
-        unsafe {
-            sys::avcodec_free_context(&mut self.inner.as_ptr())
-        }
+        unsafe { sys::avcodec_free_context(&mut self.inner.as_ptr()) }
     }
 }

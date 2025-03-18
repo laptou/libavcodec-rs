@@ -317,7 +317,9 @@ fn main() -> Result<()> {
                 output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
             }
             Err(libavcodec::Error::Av(AVError::Eof)) => break,
-            Err(libavcodec::Error::Io(err)) if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::UnexpectedEof) => {
+            Err(libavcodec::Error::Io(err))
+                if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::UnexpectedEof) =>
+            {
                 break;
             }
             Err(e) => return Err(e.into()),

@@ -74,7 +74,9 @@ mod tracing_support {
             // weird shenanigans with casting b/c va_list type generates
             // different bindings on different platforms, so we just use *void
             // instead
-            sys::av_log_set_callback(Some(std::mem::transmute(av_tracing_log_callback as *const ())));
+            sys::av_log_set_callback(Some(std::mem::transmute(
+                av_tracing_log_callback as *const (),
+            )));
         }
     }
 }

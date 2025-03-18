@@ -1,6 +1,4 @@
-use crate::{
-    error::Result, AVError, AVPixelFormat, AVSampleFormat, Error
-};
+use crate::{AVPixelFormat, AVSampleFormat, Error, error::Result};
 use libavcodec_sys as sys;
 use std::{ptr::NonNull, slice};
 
