@@ -4,7 +4,7 @@ use libavcodec::{
     AVCodecId, AVError, AVMediaType, AVSampleFormat, Codec, CodecContext, FormatContext, Frame,
     Packet, ResampleAlgorithm, SwrContext,
 };
-use std::{io::ErrorKind, path::PathBuf};
+use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
 
 /// Audio downsampler that converts any audio file to WAV with specified sample rate
@@ -197,19 +197,12 @@ fn main() -> Result<()> {
                                     // Write the packet
                                     output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
                                 }
-                                Err(libavcodec::Error::Io(err))
-                                    if err.kind() == ErrorKind::WouldBlock =>
-                                {
-                                    break;
-                                }
+                                Err(libavcodec::Error::Av(AVError::Again)) => break,
                                 Err(e) => return Err(e.into()),
                             }
                         }
                     }
-                    Err(libavcodec::Error::Av(AVError::Eof)) => break,
-                    Err(libavcodec::Error::Io(err)) if err.kind() == ErrorKind::WouldBlock => {
-                        break;
-                    }
+                    Err(libavcodec::Error::Av(AVError::Eof | AVError::Again)) => break,
                     Err(e) => return Err(e.into()),
                 }
             }
@@ -265,17 +258,14 @@ fn main() -> Result<()> {
                             // Write the packet
                             output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
                         }
-                        Err(libavcodec::Error::Io(err)) if err.kind() == ErrorKind::WouldBlock => {
+                        Err(libavcodec::Error::Av(AVError::Again)) => {
                             break;
                         }
                         Err(e) => return Err(e.into()),
                     }
                 }
             }
-            Err(libavcodec::Error::Av(AVError::Eof)) => break,
-            Err(libavcodec::Error::Io(err)) if err.kind() == ErrorKind::WouldBlock => {
-                break;
-            }
+            Err(libavcodec::Error::Av(AVError::Eof | AVError::Again)) => break,
             Err(e) => return Err(e.into()),
         }
     }
@@ -299,12 +289,7 @@ fn main() -> Result<()> {
                 // Write the packet
                 output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
             }
-            Err(libavcodec::Error::Av(AVError::Eof)) => break,
-            Err(libavcodec::Error::Io(err))
-                if matches!(err.kind(), ErrorKind::WouldBlock | ErrorKind::UnexpectedEof) =>
-            {
-                break;
-            }
+            Err(libavcodec::Error::Av(AVError::Eof | AVError::Again)) => break,
             Err(e) => return Err(e.into()),
         }
     }

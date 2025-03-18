@@ -1,4 +1,4 @@
-use crate::Stream;
+use crate::{AVError, Stream};
 use crate::error::{Error, Result};
 use crate::packet::Packet;
 use libavcodec_sys as sys;
@@ -78,7 +78,7 @@ impl FormatContext {
         let ret = unsafe { sys::av_read_frame(self.as_mut(), packet.as_mut()) };
 
         if ret < 0 {
-            if ret == sys::AVErrorEof {
+            if ret == AVError::Eof as i32 {
                 Ok(false)
             } else {
                 Err(Error::new(ret))

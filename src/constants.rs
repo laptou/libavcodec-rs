@@ -1592,6 +1592,7 @@ pub enum AVError {
     DemuxerNotFound = AVError_DEMUXER_NOT_FOUND,
     EncoderNotFound = AVError_ENCODER_NOT_FOUND,
     Eof = AVError_EEOF,
+    Again = AVError_AGAIN,
     Exit = AVError_EXIT,
     External = AVError_EXTERNAL,
     FilterNotFound = AVError_FILTER_NOT_FOUND,

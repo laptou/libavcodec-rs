@@ -11,8 +11,6 @@
 #include "libavutil/pixdesc.h"
 #include "libavutil/rational.h"
 
-const int AVErrorEAgain = AVERROR(EAGAIN);
-const int AVErrorEof = AVERROR_EOF;
 enum AVError {
   BSF_NOT_FOUND = AVERROR_BSF_NOT_FOUND,
   BUG = AVERROR_BUG,
@@ -29,6 +27,7 @@ enum AVError {
   OPTION_NOT_FOUND = AVERROR_OPTION_NOT_FOUND,
   PATCHWELCOME = AVERROR_PATCHWELCOME,
   PROTOCOL_NOT_FOUND = AVERROR_PROTOCOL_NOT_FOUND,
+  AGAIN = AVERROR(EAGAIN),
 };
 
 void avrs_format_msg(char *buf, int buf_size, const char *fmt, va_list args);
