@@ -1,10 +1,10 @@
 use anyhow::Result;
 use clap::Parser;
 use libavcodec::{
-    AVCodecId, AVMediaType, AVSampleFormat, Codec, CodecContext, EAGAIN, FormatContext, Frame, Packet,
-    SwrContext, ResampleAlgorithm
+    AVCodecId, AVMediaType, AVSampleFormat, Codec, CodecContext, EAGAIN, FormatContext, Frame,
+    Packet, ResampleAlgorithm, SwrContext,
 };
-use std::{path::PathBuf};
+use std::path::PathBuf;
 
 /// Audio downsampler that converts any audio file to WAV with specified sample rate
 #[derive(Parser)]
@@ -78,7 +78,7 @@ fn main() -> Result<()> {
 
     // Create output stream
     let mut output_stream = output_format_ctx.new_stream()?;
-    
+
     // Set output codec parameters
     output_stream.set_audio_codec_params(
         AVMediaType::Audio,
@@ -87,6 +87,20 @@ fn main() -> Result<()> {
         out_channels as usize,
         out_sample_fmt,
     )?;
+
+    // Get encoder and create encoder context
+    let encoder = Codec::find_encoder(AVCodecId::PcmS16le)
+        .ok_or_else(|| anyhow::anyhow!("failed to find PCM encoder"))?;
+    let mut output_codec_ctx = CodecContext::new(&encoder)?;
+
+    // Set encoder parameters
+    output_codec_ctx.set_sample_rate(out_sample_rate);
+    output_codec_ctx.set_sample_format(out_sample_fmt);
+    output_codec_ctx.set_channel_count(out_channels);
+    output_codec_ctx.set_time_base(output_stream.time_base());
+
+    // Open encoder
+    output_codec_ctx.open(&encoder)?;
 
     // Write header
     output_format_ctx.write_header()?;
@@ -116,6 +130,8 @@ fn main() -> Result<()> {
 
     // Read packets
     while input_format_ctx.read_packet(&mut packet)? {
+        tracing::trace!("got packet: {packet:?}");
+
         if packet.stream_index() == audio_stream.index() {
             // Send packet to decoder
             input_codec_ctx.send_packet(&packet)?;
@@ -142,31 +158,42 @@ fn main() -> Result<()> {
                         swr_ctx.convert_frame(Some(&input_frame), &mut output_frame)?;
 
                         // Calculate timestamps
-                        if input_frame.pts() != -1 {
-                            let pts = input_frame.pts();
-                            let in_time_base = audio_stream.time_base();
-                            let out_time_base = output_stream.time_base();
-                            let out_pts = pts * (out_time_base.den() as i64) * (in_time_base.num() as i64) 
-                                / ((in_time_base.den() as i64) * (out_time_base.num() as i64));
-                            output_frame.set_pts(out_pts);
+                        // if input_frame.pts() != -1 {
+                        //     let pts = input_frame.pts();
+                        //     let in_time_base = audio_stream.time_base();
+                        //     let out_time_base = output_stream.time_base();
+                        //     let out_pts =
+                        //         pts * (out_time_base.den() as i64) * (in_time_base.num() as i64)
+                        //             / ((in_time_base.den() as i64) * (out_time_base.num() as i64));
+                        //     output_frame.set_pts(out_pts);
+                        // }
+
+                        // Send frame to encoder
+                        output_codec_ctx.send_frame(Some(&output_frame))?;
+
+                        // Receive packets from encoder
+                        loop {
+                            let mut enc_packet = Packet::new()?;
+                            match output_codec_ctx.receive_packet(&mut enc_packet) {
+                                Ok(()) => {
+                                    enc_packet.set_stream_index(0);
+                                    // Write the packet
+                                    // output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
+                                    output_format_ctx.write_frame(&mut enc_packet)?;
+
+                                }
+                                Err(e) if e.code == EAGAIN => break,
+                                Err(e) => return Err(e.into()),
+                            }
                         }
-
-                        // Create packet for writing
-                        let mut enc_packet = Packet::new()?;
-                        enc_packet.set_stream_index(0);
-
-                        // Write the frame
-                        output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
-
-                        // The frames will be automatically cleaned up when they go out of scope
-                        // No need for explicit unref calls in Rust
                     }
                     Err(e) if e.code == EAGAIN => break,
                     Err(e) => return Err(e.into()),
                 }
             }
         }
-        packet.unref();
+
+        packet = Packet::new()?;
     }
 
     // Flush the decoder
@@ -196,20 +223,42 @@ fn main() -> Result<()> {
                     let pts = input_frame.pts();
                     let in_time_base = audio_stream.time_base();
                     let out_time_base = output_stream.time_base();
-                    let out_pts = pts * (out_time_base.den() as i64) * (in_time_base.num() as i64) 
+                    let out_pts = pts * (out_time_base.den() as i64) * (in_time_base.num() as i64)
                         / ((in_time_base.den() as i64) * (out_time_base.num() as i64));
                     output_frame.set_pts(out_pts);
                 }
 
-                // Create packet for writing
-                let mut enc_packet = Packet::new()?;
+                // Send frame to encoder
+                output_codec_ctx.send_frame(Some(&output_frame))?;
+
+                // Receive packets from encoder
+                loop {
+                    let mut enc_packet = Packet::new()?;
+                    match output_codec_ctx.receive_packet(&mut enc_packet) {
+                        Ok(()) => {
+                            enc_packet.set_stream_index(0);
+                            // Write the packet
+                            output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
+                        }
+                        Err(e) if e.code == EAGAIN => break,
+                        Err(e) => return Err(e.into()),
+                    }
+                }
+            }
+            Err(e) if e.code == EAGAIN => break,
+            Err(e) => return Err(e.into()),
+        }
+    }
+
+    // Flush the encoder
+    output_codec_ctx.send_frame(None)?;
+    loop {
+        let mut enc_packet = Packet::new()?;
+        match output_codec_ctx.receive_packet(&mut enc_packet) {
+            Ok(()) => {
                 enc_packet.set_stream_index(0);
-
-                // Write the frame
+                // Write the packet
                 output_format_ctx.write_frame_interleaved(&mut enc_packet)?;
-
-                // The frames will be automatically cleaned up when they go out of scope
-                // No need for explicit unref calls in Rust
             }
             Err(e) if e.code == EAGAIN => break,
             Err(e) => return Err(e.into()),

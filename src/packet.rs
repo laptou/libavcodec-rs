@@ -1,88 +1,95 @@
+use std::ptr::NonNull;
+
 use crate::error::{FFmpegError, Result};
 use libavcodec_sys as sys;
 
+#[derive(Debug)]
 pub struct Packet {
-    inner: *mut sys::AVPacket,
+    inner: NonNull<sys::AVPacket>,
 }
 
 unsafe impl Send for Packet {}
 
+impl AsRef<sys::AVPacket> for Packet {
+    fn as_ref(&self) -> &sys::AVPacket {
+        unsafe { self.inner.as_ref() }
+    }
+}
+
+impl AsMut<sys::AVPacket> for Packet {
+    fn as_mut(&mut self) -> &mut sys::AVPacket {
+        unsafe { self.inner.as_mut() }
+    }
+}
+
 impl Packet {
     pub fn new() -> Result<Self> {
         let inner = unsafe { sys::av_packet_alloc() };
-        if inner.is_null() {
-            return Err(FFmpegError::new(-1));
-        }
+        let inner = NonNull::new(inner).ok_or(FFmpegError::new(-1))?;
+        // unsafe { sys::av_init_packet(inner.as_mut()) };
+
         Ok(Packet { inner })
     }
 
-    pub fn as_mut_ptr(&mut self) -> *mut sys::AVPacket {
-        self.inner
-    }
-
-    pub fn as_ptr(&self) -> *const sys::AVPacket {
-        self.inner
-    }
-
     pub fn stream_index(&self) -> i32 {
-        unsafe { (*self.inner).stream_index }
+        self.as_ref().stream_index
     }
 
     pub fn pts(&self) -> i64 {
-        unsafe { (*self.inner).pts }
+        self.as_ref().pts
     }
 
     pub fn dts(&self) -> i64 {
-        unsafe { (*self.inner).dts }
-    }
-
-    pub fn unref(&mut self) {
-        unsafe { sys::av_packet_unref(self.inner) }
+        self.as_ref().dts
     }
 
     pub fn set_pts(&mut self, pts: i64) {
-        unsafe { (*self.inner).pts = pts }
+        self.as_mut().pts = pts
     }
 
     pub fn set_dts(&mut self, dts: i64) {
-        unsafe { (*self.inner).dts = dts }
+        self.as_mut().dts = dts
     }
 
     pub fn set_stream_index(&mut self, index: i32) {
-        unsafe { (*self.inner).stream_index = index }
+        self.as_mut().stream_index = index
     }
 
     pub fn rescale_ts(&mut self, src_tb: sys::AVRational, dst_tb: sys::AVRational) {
         unsafe {
-            sys::av_packet_rescale_ts(self.inner, src_tb, dst_tb);
+            sys::av_packet_rescale_ts(self.as_mut(), src_tb, dst_tb);
         }
     }
 
     pub fn duration(&self) -> i64 {
-        unsafe { (*self.inner).duration }
+        self.as_ref().duration
     }
 
     pub fn set_duration(&mut self, duration: i64) {
-        unsafe { (*self.inner).duration = duration }
+        self.as_mut().duration = duration
     }
 
     pub fn size(&self) -> i32 {
-        unsafe { (*self.inner).size }
+        self.as_ref().size
     }
 
     pub fn data(&self) -> *const u8 {
-        unsafe { (*self.inner).data }
+        self.as_ref().data
     }
 
     pub fn data_mut(&mut self) -> *mut u8 {
-        unsafe { (*self.inner).data }
+        self.as_mut().data
+    }
+
+    pub fn unref(&mut self) {
+        unsafe { sys::av_packet_unref(self.inner.as_ptr()) }
     }
 }
 
 impl Drop for Packet {
     fn drop(&mut self) {
         unsafe {
-            sys::av_packet_free(&mut self.inner);
+            sys::av_packet_free(&mut self.inner.as_ptr());
         }
     }
 }

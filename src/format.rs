@@ -75,7 +75,7 @@ impl FormatContext {
     }
 
     pub fn read_packet(&mut self, packet: &mut Packet) -> Result<bool> {
-        let ret = unsafe { sys::av_read_frame(self.inner.as_ptr(), packet.as_mut_ptr()) };
+        let ret = unsafe { sys::av_read_frame(self.as_mut(), packet.as_mut()) };
 
         if ret < 0 {
             if ret == sys::AVErrorEof {
@@ -134,7 +134,7 @@ impl FormatContext {
     }
 
     pub fn write_header(&mut self) -> Result<()> {
-        let ret = unsafe { sys::avformat_write_header(self.inner.as_ptr(), std::ptr::null_mut()) };
+        let ret = unsafe { sys::avformat_write_header(self.as_mut(), std::ptr::null_mut()) };
         if ret < 0 {
             Err(FFmpegError::new(ret))
         } else {
@@ -143,7 +143,7 @@ impl FormatContext {
     }
 
     pub fn write_frame(&mut self, packet: &mut Packet) -> Result<()> {
-        let ret = unsafe { sys::av_write_frame(self.inner.as_ptr(), packet.as_mut_ptr()) };
+        let ret = unsafe { sys::av_write_frame(self.as_mut(), packet.as_mut()) };
         if ret < 0 {
             Err(FFmpegError::new(ret))
         } else {
@@ -152,8 +152,7 @@ impl FormatContext {
     }
 
     pub fn write_frame_interleaved(&mut self, packet: &mut Packet) -> Result<()> {
-        let ret =
-            unsafe { sys::av_interleaved_write_frame(self.inner.as_ptr(), packet.as_mut_ptr()) };
+        let ret = unsafe { sys::av_interleaved_write_frame(self.as_mut(), packet.as_mut()) };
         if ret < 0 {
             Err(FFmpegError::new(ret))
         } else {
@@ -162,7 +161,7 @@ impl FormatContext {
     }
 
     pub fn write_trailer(&mut self) -> Result<()> {
-        let ret = unsafe { sys::av_write_trailer(self.inner.as_ptr()) };
+        let ret = unsafe { sys::av_write_trailer(self.as_mut()) };
         if ret < 0 {
             Err(FFmpegError::new(ret))
         } else {
@@ -171,7 +170,7 @@ impl FormatContext {
     }
 
     pub fn new_stream(&mut self) -> Result<Stream> {
-        let stream = unsafe { sys::avformat_new_stream(self.inner.as_ptr(), ptr::null()) };
+        let stream = unsafe { sys::avformat_new_stream(self.as_mut(), ptr::null()) };
         let stream = NonNull::new(stream).ok_or(FFmpegError::new(-1))?;
 
         Ok(Stream { inner: stream })
