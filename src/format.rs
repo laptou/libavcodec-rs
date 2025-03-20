@@ -1,30 +1,34 @@
-use crate::{AVError, Stream};
 use crate::error::{Error, Result};
+use crate::io_context::IoContext;
 use crate::packet::Packet;
+use crate::{AVError, Stream};
 use libavcodec_sys as sys;
 use std::ffi::CString;
 use std::path::Path;
 use std::ptr::{self, NonNull};
 
-pub struct FormatContext {
+pub struct FormatContext<D = ()> {
     inner: NonNull<sys::AVFormatContext>,
+    // Keep IoContext alive as long as this FormatContext is alive
+    // This is needed because the IoContext has callbacks that need to remain valid
+    io_context: Option<IoContext<D>>,
 }
 
 unsafe impl Send for FormatContext {}
 
-impl AsRef<sys::AVFormatContext> for FormatContext {
+impl<D> AsRef<sys::AVFormatContext> for FormatContext<D> {
     fn as_ref(&self) -> &sys::AVFormatContext {
         unsafe { self.inner.as_ref() }
     }
 }
 
-impl AsMut<sys::AVFormatContext> for FormatContext {
+impl<D> AsMut<sys::AVFormatContext> for FormatContext<D> {
     fn as_mut(&mut self) -> &mut sys::AVFormatContext {
         unsafe { self.inner.as_mut() }
     }
 }
 
-impl FormatContext {
+impl<D> FormatContext<D> {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path_str = path.as_ref().to_string_lossy();
         let path_cstr = CString::new(path_str.as_bytes()).unwrap();
@@ -52,7 +56,17 @@ impl FormatContext {
 
         let inner = NonNull::new(inner).unwrap();
 
-        Ok(FormatContext { inner })
+        Ok(FormatContext {
+            inner,
+            io_context: None,
+        })
+    }
+
+    pub unsafe fn from_raw(ptr: NonNull<sys::AVFormatContext>) -> Self {
+        Self {
+            inner: ptr,
+            io_context: None,
+        }
     }
 
     pub fn as_mut_ptr(&mut self) -> *mut sys::AVFormatContext {
@@ -130,7 +144,10 @@ impl FormatContext {
             }
         }
 
-        Ok(FormatContext { inner: ctx })
+        Ok(FormatContext {
+            inner: ctx,
+            io_context: None,
+        })
     }
 
     pub fn write_header(&mut self) -> Result<()> {
@@ -175,9 +192,82 @@ impl FormatContext {
 
         Ok(Stream { inner: stream })
     }
+
+    /// Creates a new FormatContext for an input source using a custom IoContext
+    ///
+    /// # Parameters
+    /// * `io_context` - The custom IoContext to use for I/O operations
+    /// * `file_name` - The name of the file to open
+    ///
+    /// This method creates a FormatContext that reads from the provided IoContext,
+    /// which can be used to read from arbitrary sources with custom read/write/seek
+    /// callbacks.
+    pub fn with_io_context(io_context: IoContext<D>, file_name: Option<&str>) -> Result<Self> {
+        let mut ctx = Self::alloc()?;
+        ctx.set_io_context(io_context);
+        ctx.open_input(file_name)?;
+
+        Ok(ctx)
+    }
+
+    /// Creates an uninitialized FormatContext
+    ///
+    /// This is a low-level function typically used internally.
+    /// You should prefer the `open`, `output`, or `with_io_context` methods instead.
+    pub fn alloc() -> Result<Self> {
+        unsafe {
+            let ctx = sys::avformat_alloc_context();
+            if ctx.is_null() {
+                return Err(Error::Alloc);
+            }
+
+            let ptr = NonNull::new(ctx).ok_or(Error::Alloc)?;
+            Ok(FormatContext {
+                inner: ptr,
+                io_context: None,
+            })
+        }
+    }
+
+    /// Set the custom IoContext for this FormatContext
+    ///
+    /// This method allows setting a custom IoContext for I/O operations.
+    /// This is typically used before calling `open_input`.
+    pub fn set_io_context(&mut self, mut io_context: IoContext<D>) {
+        unsafe {
+            (*self.inner.as_ptr()).pb = io_context.as_mut_ptr();
+        }
+
+        self.io_context = Some(io_context);
+    }
+
+    /// Open input without an explicit path, for use with custom IoContext
+    ///
+    /// This method is used to open an input after setting up a format context
+    /// with a custom IoContext.
+    pub fn open_input(&mut self, file_name: Option<&str>) -> Result<()> {
+        unsafe {
+            let file_name_cstr = file_name.map(|s| CString::new(s).unwrap());
+
+            // open input - we need to use a mutable pointer for avformat_open_input
+            let mut ctx_ptr = self.inner.as_ptr();
+            let ret = sys::avformat_open_input(
+                &mut ctx_ptr,
+                file_name_cstr.map_or(ptr::null_mut(), |s| s.as_ptr()),
+                ptr::null(),
+                ptr::null_mut(),
+            );
+
+            if ret < 0 {
+                return Err(Error::new(ret));
+            }
+
+            Ok(())
+        }
+    }
 }
 
-impl Drop for FormatContext {
+impl<D> Drop for FormatContext<D> {
     fn drop(&mut self) {
         unsafe {
             // sys::avformat_close_input(&mut self.inner);
@@ -186,7 +276,11 @@ impl Drop for FormatContext {
                 if (fmt.flags & sys::AVFMT_NOFILE as i32) == 0 {
                     let mut pb = self.as_mut().pb;
                     if !pb.is_null() {
-                        sys::avio_closep(&mut pb);
+                        // Only close pb if we don't have an _io_context
+                        // If we have an _io_context, its Drop impl will handle this
+                        if self.io_context.is_none() {
+                            sys::avio_closep(&mut pb);
+                        }
                     }
                 }
             }

@@ -8,6 +8,7 @@ mod rational;
 mod stream;
 mod swr;
 mod sws;
+mod io_context;
 
 pub use codec::*;
 pub use constants::*;
@@ -20,6 +21,7 @@ pub use rational::*;
 pub use stream::*;
 pub use swr::*;
 pub use sws::*;
+pub use io_context::{IoContext, IoContextParams};
 
 #[cfg(feature = "tracing")]
 mod tracing_support {
