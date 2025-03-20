@@ -110,12 +110,11 @@ impl Frame {
 
     pub fn allocate_audio_buffer(
         &mut self,
-        channel_count: usize,
+        channel_layout: ChannelLayout,
         sample_rate: usize,
         sample_count: usize,
         sample_fmt: AVSampleFormat,
     ) -> Result<()> {
-        let channel_count = channel_count as i32;
         let sample_rate = sample_rate as i32;
         let sample_fmt = sample_fmt as i32;
 
@@ -124,12 +123,12 @@ impl Frame {
             self.inner_mut().nb_samples = sample_count as i32;
             self.inner_mut().format = sample_fmt as i32;
             self.inner_mut().sample_rate = sample_rate;
-            sys::av_channel_layout_default(&mut self.inner_mut().ch_layout, channel_count);
+            self.inner_mut().ch_layout = channel_layout.0;
 
             let mut linesize = 0;
             let size = sys::av_samples_get_buffer_size(
                 &mut linesize,
-                channel_count,
+                channel_layout.count() as i32,
                 sample_count as i32,
                 sample_fmt as i32,
                 64, // Increased alignment
@@ -164,7 +163,7 @@ impl Frame {
         unsafe { self.inner.as_mut() }
     }
 
-    pub fn data(&self, plane: usize) -> Option<&[u8]> {
+    pub fn picture_data(&self, plane: usize) -> Option<&[u8]> {
         unsafe {
             let data = self.data_ptr(plane);
             let linesize = self.data_line_size(plane);
@@ -181,7 +180,7 @@ impl Frame {
         }
     }
 
-    pub fn data_mut(&mut self, plane: usize) -> Option<&mut [u8]> {
+    pub fn picture_data_mut(&mut self, plane: usize) -> Option<&mut [u8]> {
         unsafe {
             let data = self.data_ptr_mut(plane);
             let linesize = self.data_line_size(plane);
@@ -194,6 +193,42 @@ impl Frame {
                 let linesize = linesize as usize;
                 let height = self.height() as usize;
                 Some(slice::from_raw_parts_mut(data, linesize * height))
+            }
+        }
+    }
+
+    
+
+    pub fn audio_data(&self, plane: usize) -> Option<&[u8]> {
+        unsafe {
+            let data = self.data_ptr(plane);
+            let linesize = self.data_line_size(plane);
+
+            if data.is_null() || linesize <= 0 {
+                // can't construct a slice if linesize is negative, this means
+                // we're supposed to iterate in reverse
+                None
+            } else {
+                let linesize = linesize as usize;
+                let channels = self.inner().ch_layout.nb_channels as usize;
+                Some(slice::from_raw_parts(data, linesize * channels))
+            }
+        }
+    }
+
+    pub fn audio_data_mut(&mut self, plane: usize) -> Option<&mut [u8]> {
+        unsafe {
+            let data = self.data_ptr_mut(plane);
+            let linesize = self.data_line_size(plane);
+
+            if data.is_null() || linesize <= 0 {
+                // can't construct a slice if linesize is negative, this means
+                // we're supposed to iterate in reverse
+                None
+            } else {
+                let linesize = linesize as usize;
+                let channels = self.inner().ch_layout.nb_channels as usize;
+                Some(slice::from_raw_parts_mut(data, linesize * channels))
             }
         }
     }
@@ -274,10 +309,8 @@ impl Frame {
         self.inner_mut().sample_rate = rate;
     }
 
-    pub fn set_channel_count(&mut self, channels: i32) {
-        unsafe {
-            sys::av_channel_layout_default(&mut self.inner_mut().ch_layout, channels);
-        }
+    pub fn set_channel_layout(&mut self, layout: ChannelLayout) {
+        self.inner_mut().ch_layout = layout.0;
     }
 
     pub fn set_format(&mut self, format: i32) {
