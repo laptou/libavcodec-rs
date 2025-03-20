@@ -1,7 +1,7 @@
 use crate::AVSampleFormat;
 use crate::error::{Error, Result};
 use crate::frame::Frame;
-use libavcodec_sys as sys;
+use libavcodec_sys::{self as sys, av_channel_layout_default};
 use std::ptr;
 
 /// Specifies the resampling algorithm to use
@@ -57,13 +57,15 @@ impl SwrContext {
         // Create default channel layouts based on channel counts
         let mut in_ch_layout = unsafe { std::mem::zeroed::<sys::AVChannelLayout>() };
         let mut out_ch_layout = unsafe { std::mem::zeroed::<sys::AVChannelLayout>() };
+        
+        unsafe { av_channel_layout_default(&mut in_ch_layout, in_channel_count as i32) };
+        unsafe { av_channel_layout_default(&mut out_ch_layout, out_channel_count as i32) };
+        // // Initialize channel layouts with just channel counts
+        // in_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
+        // in_ch_layout.nb_channels = in_channel_count as i32;
 
-        // Initialize channel layouts with just channel counts
-        in_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
-        in_ch_layout.nb_channels = in_channel_count as i32;
-
-        out_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
-        out_ch_layout.nb_channels = out_channel_count as i32;
+        // out_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
+        // out_ch_layout.nb_channels = out_channel_count as i32;
 
         let mut inner = ptr::null_mut();
         let ret = unsafe {

@@ -7,13 +7,14 @@ use std::ffi::CString;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::ptr::{self, NonNull};
 
 pub struct FormatContext<D = ()> {
     inner: NonNull<sys::AVFormatContext>,
     // Keep IoContext alive as long as this FormatContext is alive
     // This is needed because the IoContext has callbacks that need to remain valid
-    io_context: Option<IoContext<D>>,
+    io_context: Option<Pin<Box<IoContext<D>>>>,
 }
 
 unsafe impl<D> Send for FormatContext<D> {}
@@ -218,12 +219,10 @@ impl<D> FormatContext<D> {
     /// This method creates a FormatContext that reads from the provided IoContext,
     /// which can be used to read from arbitrary sources with custom read/write/seek
     /// callbacks.
-    pub fn with_io_context(io_context: IoContext<D>, file_name: Option<&Path>) -> Result<Self> {
+    pub fn with_io_context(io_context: Pin<Box<IoContext<D>>>, file_name: Option<&Path>) -> Result<Self> {
         let mut ctx = Self::alloc()?;
         ctx.set_io_context(io_context);
-        ctx.open_input(file_name)?;
-
-        Ok(ctx)
+        ctx.open_input(file_name)
     }
 
     /// Creates an uninitialized FormatContext
@@ -249,8 +248,10 @@ impl<D> FormatContext<D> {
     ///
     /// This method allows setting a custom IoContext for I/O operations.
     /// This is typically used before calling `open_input`.
-    pub fn set_io_context(&mut self, mut io_context: IoContext<D>) {
+    pub fn set_io_context(&mut self, mut io_context: Pin<Box<IoContext<D>>>) {
         unsafe {
+            let io_context = Pin::as_mut(&mut io_context);
+            let io_context = Pin::get_unchecked_mut(io_context);
             (*self.inner.as_ptr()).pb = io_context.as_mut_ptr();
         }
 
@@ -261,7 +262,7 @@ impl<D> FormatContext<D> {
     ///
     /// This method is used to open an input after setting up a format context
     /// with a custom IoContext.
-    pub fn open_input(&mut self, file_name: Option<&Path>) -> Result<()> {
+    pub fn open_input(self, file_name: Option<&Path>) -> Result<Self> {
         unsafe {
             let file_name_cstr = match file_name {
                 Some(path) => {
@@ -282,10 +283,12 @@ impl<D> FormatContext<D> {
             );
 
             if ret < 0 {
+                // this method consumes self b/c if avformat_open_input fails,
+                // it frees the context!
                 return Err(Error::new(ret));
             }
 
-            Ok(())
+            Ok(self)
         }
     }
 }
@@ -295,18 +298,18 @@ impl<D> Drop for FormatContext<D> {
         unsafe {
             // sys::avformat_close_input(&mut self.inner);
 
-            if let Some(fmt) = self.as_ref().oformat.as_ref() {
-                if (fmt.flags & sys::AVFMT_NOFILE as i32) == 0 {
-                    let mut pb = self.as_mut().pb;
-                    if !pb.is_null() {
-                        // Only close pb if we don't have an _io_context
-                        // If we have an _io_context, its Drop impl will handle this
-                        if self.io_context.is_none() {
-                            sys::avio_closep(&mut pb);
-                        }
-                    }
-                }
-            }
+            // if let Some(fmt) = self.as_ref().oformat.as_ref() {
+            //     if (fmt.flags & sys::AVFMT_NOFILE as i32) == 0 {
+            //         let mut pb = self.as_mut().pb;
+            //         if !pb.is_null() {
+            //             // Only close pb if we don't have an _io_context
+            //             // If we have an _io_context, its Drop impl will handle this
+            //             if self.io_context.is_none() {
+            //                 sys::avio_closep(&mut pb);
+            //             }
+            //         }
+            //     }
+            // }
 
             sys::avformat_free_context(self.as_mut_ptr());
         }
@@ -376,7 +379,8 @@ impl Io<Cursor<Vec<u8>>> {
 impl Io<File> {
     /// Create an AudioSource from a file
     pub fn from_file(path: &Path) -> Result<Self> {
-        let file = std::fs::File::open(path)?;
-        Ok(Self::from_seekable(file, Some(path.to_path_buf())))
+        Ok(Io::File(path.to_path_buf()))
+        // let file = std::fs::File::open(path)?;
+        // Ok(Self::from_seekable(file, Some(path.to_path_buf())))
     }
 }

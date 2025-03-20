@@ -1,5 +1,5 @@
-use std::io::SeekFrom;
 use std::ptr::NonNull;
+use std::{io::SeekFrom, pin::Pin};
 
 use crate::{AVError, sys};
 
@@ -72,7 +72,7 @@ impl<D> IoContext<D> {
     /// - If only `read_fn` is provided: Read-only mode
     /// - If only `write_fn` is provided: Write-only mode
     /// - If both are provided: Read-write mode
-    pub fn new(data: D, params: IoContextParams<D>) -> crate::Result<Self> {
+    pub fn new(data: D, params: IoContextParams<D>) -> crate::Result<Pin<Box<Self>>> {
         let (read_fn, write_fn, seek_fn, buffer_size) = match params {
             IoContextParams::Read {
                 read_fn,
@@ -94,7 +94,7 @@ impl<D> IoContext<D> {
 
         // Create a temp context with dummy inner
         // We'll properly initialize inner in the initialize method
-        let mut ctx = Self {
+        let ctx = Self {
             data,
             read_fn,
             write_fn,
@@ -102,137 +102,134 @@ impl<D> IoContext<D> {
             inner: NonNull::dangling(), // Temporary value, will be replaced in initialize
         };
 
-        // initialize the context
-        ctx.initialize(buffer_size)?;
+        let mut ctx = Box::new(ctx);
 
-        Ok(ctx)
-    }
+        // trampoline for the read function
+        extern "C" fn read_callback(
+            opaque: *mut std::ffi::c_void,
+            buf: *mut u8,
+            buf_size: i32,
+        ) -> i32 {
+            let ctx = unsafe { &mut *(opaque as *mut IoContext) };
+            let buffer = unsafe { std::slice::from_raw_parts_mut(buf, buf_size as usize) };
 
-    fn initialize(&mut self, buffer_size: usize) -> crate::Result<()> {
+            // if read_fn is None, this shouldn't be called, but handle it gracefully
+            let read_fn = match &mut ctx.read_fn {
+                Some(read_fn) => read_fn,
+                None => return -1,
+            };
+
+            match read_fn(&mut ctx.data, buffer) {
+                Ok(bytes_read) => {
+                    if bytes_read == 0 {
+                        // end of file
+                        AVError::Eof as i32
+                    } else {
+                        bytes_read as i32
+                    }
+                }
+                Err(err) => {
+                    #[cfg(feature = "tracing")]
+                    tracing::error!("IoContext read error: {}", err);
+
+                    match err.raw_os_error() {
+                        Some(code) => -code,
+                        None => -1,
+                    }
+                }
+            }
+        }
+
+        // trampoline for the write function
+        extern "C" fn write_callback(
+            opaque: *mut std::ffi::c_void,
+            buf: *const u8,
+            buf_size: i32,
+        ) -> i32 {
+            let ctx = unsafe { &mut *(opaque as *mut IoContext) };
+            let buffer = unsafe { std::slice::from_raw_parts(buf, buf_size as usize) };
+
+            // if write_fn is None, this shouldn't be called, but handle it gracefully
+            let write_fn = match &mut ctx.write_fn {
+                Some(write_fn) => write_fn,
+                None => return -1,
+            };
+
+            match write_fn(&mut ctx.data, buffer) {
+                Ok(bytes_written) => bytes_written as i32,
+                Err(err) => {
+                    #[cfg(feature = "tracing")]
+                    tracing::error!("IoContext write error: {}", err);
+
+                    match err.raw_os_error() {
+                        Some(code) => -code,
+                        None => -1,
+                    }
+                }
+            }
+        }
+
+        // trampoline for the seek function
+        extern "C" fn seek_callback(
+            opaque: *mut std::ffi::c_void,
+            offset: i64,
+            whence: i32,
+        ) -> i64 {
+            let ctx = unsafe { &mut *(opaque as *mut IoContext) };
+
+            // if seek_fn is None, this shouldn't be called, but handle it gracefully
+            let seek_fn = match &mut ctx.seek_fn {
+                Some(seek_fn) => seek_fn,
+                None => return -1, // error
+            };
+
+            let seek_from = match whence {
+                libc::SEEK_SET => SeekFrom::Start(offset as u64),
+                libc::SEEK_CUR => SeekFrom::Current(offset),
+                libc::SEEK_END => SeekFrom::End(offset),
+                _ => return -1, // error
+            };
+
+            match seek_fn(&mut ctx.data, seek_from) {
+                Ok(position) => position as i64,
+                Err(_) => -1, // error
+            }
+        }
+
+        // determine write flag based on provided callbacks
+        let write_flag = if ctx.write_fn.is_some() { 1 } else { 0 };
+
         unsafe {
-            // trampoline for the read function
-            extern "C" fn read_callback(
-                opaque: *mut std::ffi::c_void,
-                buf: *mut u8,
-                buf_size: i32,
-            ) -> i32 {
-                let ctx = unsafe { &mut *(opaque as *mut IoContext) };
-                let buffer = unsafe { std::slice::from_raw_parts_mut(buf, buf_size as usize) };
-
-                // if read_fn is None, this shouldn't be called, but handle it gracefully
-                let read_fn = match &mut ctx.read_fn {
-                    Some(read_fn) => read_fn,
-                    None => return -1,
-                };
-
-                match read_fn(&mut ctx.data, buffer) {
-                    Ok(bytes_read) => {
-                        if bytes_read == 0 {
-                            // end of file
-                            AVError::Eof as i32
-                        } else {
-                            bytes_read as i32
-                        }
-                    }
-                    Err(err) => {
-                        #[cfg(feature = "tracing")]
-                        tracing::error!("IoContext read error: {}", err);
-
-                        match err.raw_os_error() {
-                            Some(code) => -code,
-                            None => -1,
-                        }
-                    }
-                }
-            }
-
-            // trampoline for the write function
-            extern "C" fn write_callback(
-                opaque: *mut std::ffi::c_void,
-                buf: *const u8,
-                buf_size: i32,
-            ) -> i32 {
-                let ctx = unsafe { &mut *(opaque as *mut IoContext) };
-                let buffer = unsafe { std::slice::from_raw_parts(buf, buf_size as usize) };
-
-                // if write_fn is None, this shouldn't be called, but handle it gracefully
-                let write_fn = match &mut ctx.write_fn {
-                    Some(write_fn) => write_fn,
-                    None => return -1,
-                };
-
-                match write_fn(&mut ctx.data, buffer) {
-                    Ok(bytes_written) => bytes_written as i32,
-                    Err(err) => {
-                        #[cfg(feature = "tracing")]
-                        tracing::error!("IoContext write error: {}", err);
-
-                        match err.raw_os_error() {
-                            Some(code) => -code,
-                            None => -1,
-                        }
-                    }
-                }
-            }
-
-            // trampoline for the seek function
-            extern "C" fn seek_callback(
-                opaque: *mut std::ffi::c_void,
-                offset: i64,
-                whence: i32,
-            ) -> i64 {
-                let ctx = unsafe { &mut *(opaque as *mut IoContext) };
-
-                // if seek_fn is None, this shouldn't be called, but handle it gracefully
-                let seek_fn = match &mut ctx.seek_fn {
-                    Some(seek_fn) => seek_fn,
-                    None => return -1, // error
-                };
-
-                let seek_from = match whence {
-                    libc::SEEK_SET => SeekFrom::Start(offset as u64),
-                    libc::SEEK_CUR => SeekFrom::Current(offset),
-                    libc::SEEK_END => SeekFrom::End(offset),
-                    _ => return -1, // error
-                };
-
-                match seek_fn(&mut ctx.data, seek_from) {
-                    Ok(position) => position as i64,
-                    Err(_) => -1, // error
-                }
-            }
-
-            // determine write flag based on provided callbacks
-            let write_flag = if self.write_fn.is_some() { 1 } else { 0 };
-
             // create the avio context with appropriate callbacks
             let buffer_ptr = sys::av_malloc(buffer_size as usize) as *mut _;
-            let opaque = self as *mut _ as *mut std::ffi::c_void;
+            let opaque = ctx.as_mut_ptr() as *mut _ as *mut std::ffi::c_void;
 
             let context = sys::avio_alloc_context(
                 buffer_ptr,         // buffer
                 buffer_size as i32, // buffer size
                 write_flag,         // write flag
                 opaque,             // opaque pointer to our context
-                match &self.read_fn {
+                match &ctx.read_fn {
                     Some(_) => Some(read_callback),
                     None => None,
                 }, // read callback
-                match &self.write_fn {
+                match &ctx.write_fn {
                     Some(_) => Some(write_callback),
                     None => None,
                 }, // write callback
-                match &self.seek_fn {
+                match &ctx.seek_fn {
                     Some(_) => Some(seek_callback),
                     None => None,
                 }, // seek callback
             );
 
             // check if context is null and return error if it is
-            self.inner = NonNull::new(context).ok_or(crate::Error::Alloc)?;
+            ctx.inner = NonNull::new(context).ok_or(crate::Error::Alloc)?;
         }
 
-        Ok(())
+        // has to be pinned so that opaque ptr to this object doesn't become
+        // invalid
+        Ok(Box::into_pin(ctx))
     }
 
     pub fn as_mut_ptr(&mut self) -> *mut sys::AVIOContext {
