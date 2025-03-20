@@ -8,6 +8,8 @@ use crate::{AVChannelOrder, sys};
 #[derive(Clone, Copy)]
 pub struct ChannelLayout(pub sys::AVChannelLayout);
 
+unsafe impl Send for ChannelLayout {}
+
 impl ChannelLayout {
     pub fn count(&self) -> usize {
         self.0.nb_channels as usize
