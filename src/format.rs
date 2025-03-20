@@ -7,14 +7,13 @@ use std::ffi::CString;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
 use std::ptr::{self, NonNull};
 
 pub struct FormatContext<D = ()> {
     inner: NonNull<sys::AVFormatContext>,
     // Keep IoContext alive as long as this FormatContext is alive
     // This is needed because the IoContext has callbacks that need to remain valid
-    io_context: Option<Pin<Box<IoContext<D>>>>,
+    io_context: Option<IoContext<D>>,
 }
 
 unsafe impl<D> Send for FormatContext<D> {}
@@ -219,7 +218,7 @@ impl<D> FormatContext<D> {
     /// This method creates a FormatContext that reads from the provided IoContext,
     /// which can be used to read from arbitrary sources with custom read/write/seek
     /// callbacks.
-    pub fn with_io_context(io_context: Pin<Box<IoContext<D>>>, file_name: Option<&Path>) -> Result<Self> {
+    pub fn with_io_context(io_context: IoContext<D>, file_name: Option<&Path>) -> Result<Self> {
         let mut ctx = Self::alloc()?;
         ctx.set_io_context(io_context);
         ctx.open_input(file_name)
@@ -248,10 +247,8 @@ impl<D> FormatContext<D> {
     ///
     /// This method allows setting a custom IoContext for I/O operations.
     /// This is typically used before calling `open_input`.
-    pub fn set_io_context(&mut self, mut io_context: Pin<Box<IoContext<D>>>) {
+    pub fn set_io_context(&mut self, mut io_context: IoContext<D>) {
         unsafe {
-            let io_context = Pin::as_mut(&mut io_context);
-            let io_context = Pin::get_unchecked_mut(io_context);
             (*self.inner.as_ptr()).pb = io_context.as_mut_ptr();
         }
 
