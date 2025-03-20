@@ -24,6 +24,9 @@ pub enum Error {
 
     #[error("the string contained a nul byte")]
     NulByte,
+
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 impl Error {

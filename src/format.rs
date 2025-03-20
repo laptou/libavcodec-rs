@@ -1,10 +1,12 @@
 use crate::error::{Error, Result};
-use crate::io_context::IoContext;
+use crate::io_context::{IoContext, ReadFn, SeekFn};
 use crate::packet::Packet;
-use crate::{AVError, Stream};
+use crate::{AVError, IoContextParams, Stream};
 use libavcodec_sys as sys;
 use std::ffi::CString;
-use std::path::Path;
+use std::fs::File;
+use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use std::ptr::{self, NonNull};
 
 pub struct FormatContext<D = ()> {
@@ -14,7 +16,7 @@ pub struct FormatContext<D = ()> {
     io_context: Option<IoContext<D>>,
 }
 
-unsafe impl Send for FormatContext {}
+unsafe impl<D> Send for FormatContext<D> {}
 
 impl<D> AsRef<sys::AVFormatContext> for FormatContext<D> {
     fn as_ref(&self) -> &sys::AVFormatContext {
@@ -193,6 +195,20 @@ impl<D> FormatContext<D> {
         Ok(Stream { inner: stream })
     }
 
+    pub fn from_io(io: Io<D>) -> Result<Self> {
+        match io {
+            Io::File(path) => {
+                // existing file-based approach
+                Self::open(&path)
+            }
+            Io::Custom {
+                data,
+                params,
+                file_name,
+            } => Self::with_io_context(IoContext::new(data, params)?, file_name.as_deref()),
+        }
+    }
+
     /// Creates a new FormatContext for an input source using a custom IoContext
     ///
     /// # Parameters
@@ -202,7 +218,7 @@ impl<D> FormatContext<D> {
     /// This method creates a FormatContext that reads from the provided IoContext,
     /// which can be used to read from arbitrary sources with custom read/write/seek
     /// callbacks.
-    pub fn with_io_context(io_context: IoContext<D>, file_name: Option<&str>) -> Result<Self> {
+    pub fn with_io_context(io_context: IoContext<D>, file_name: Option<&Path>) -> Result<Self> {
         let mut ctx = Self::alloc()?;
         ctx.set_io_context(io_context);
         ctx.open_input(file_name)?;
@@ -245,9 +261,16 @@ impl<D> FormatContext<D> {
     ///
     /// This method is used to open an input after setting up a format context
     /// with a custom IoContext.
-    pub fn open_input(&mut self, file_name: Option<&str>) -> Result<()> {
+    pub fn open_input(&mut self, file_name: Option<&Path>) -> Result<()> {
         unsafe {
-            let file_name_cstr = file_name.map(|s| CString::new(s).unwrap());
+            let file_name_cstr = match file_name {
+                Some(path) => {
+                    let path_str = path.to_str().ok_or(Error::Utf8)?;
+                    let path_cstr = CString::new(path_str).unwrap();
+                    Some(path_cstr)
+                }
+                None => None,
+            };
 
             // open input - we need to use a mutable pointer for avformat_open_input
             let mut ctx_ptr = self.inner.as_ptr();
@@ -287,5 +310,73 @@ impl<D> Drop for FormatContext<D> {
 
             sys::avformat_free_context(self.as_mut_ptr());
         }
+    }
+}
+
+pub enum Io<D = ()> {
+    /// File path for direct reading
+    File(PathBuf),
+    /// I/O callbacks for custom I/O
+    Custom {
+        data: D,
+        params: IoContextParams<D>,
+        /// Optional file name, used to infer file format
+        file_name: Option<PathBuf>,
+    },
+}
+
+// Adaptor functions to create callbacks from common types
+impl<D> Io<D> {
+    /// Create an AudioSource from a Read implementation
+    pub fn from_reader(reader: D, file_name: Option<PathBuf>) -> Self
+    where
+        D: Read + 'static,
+    {
+        let read_fn = Box::new(|reader: &mut D, buf: &mut [u8]| reader.read(buf)) as ReadFn<D>;
+
+        Self::Custom {
+            data: reader,
+            params: IoContextParams::Read {
+                read_fn,
+                seek_fn: None,
+                buffer_size: 32768,
+            },
+            file_name,
+        }
+    }
+
+    /// Create an AudioSource from a Read + Seek implementation
+    pub fn from_seekable(reader: D, file_name: Option<PathBuf>) -> Self
+    where
+        D: Read + Seek + 'static,
+    {
+        let read_fn = Box::new(|reader: &mut D, buf: &mut [u8]| reader.read(buf)) as ReadFn<D>;
+        let seek_fn = Box::new(|reader: &mut D, pos: SeekFrom| reader.seek(pos)) as SeekFn<D>;
+
+        Self::Custom {
+            data: reader,
+            params: IoContextParams::Read {
+                read_fn,
+                seek_fn: Some(seek_fn),
+                buffer_size: 32768,
+            },
+            file_name,
+        }
+    }
+}
+
+impl Io<Cursor<Vec<u8>>> {
+    /// Create an AudioSource from raw bytes
+    pub fn from_bytes(bytes: Vec<u8>, file_name: Option<PathBuf>) -> Self {
+        let cursor = std::io::Cursor::new(bytes);
+        Io::from_seekable(cursor, file_name)
+    }
+}
+
+impl Io<File> {
+    /// Create an AudioSource from a file
+    pub fn from_file(path: &Path) -> Result<Self> {
+        let file = std::fs::File::open(path)?;
+        Ok(Self::from_seekable(file, Some(path.to_path_buf())))
     }
 }
