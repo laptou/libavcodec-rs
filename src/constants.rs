@@ -17,7 +17,7 @@ pub enum AVAudioServiceType {
     VoiceOver = AVAudioServiceType_AV_AUDIO_SERVICE_TYPE_VOICE_OVER,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 #[cfg_attr(windows, repr(i32))]
 #[cfg_attr(unix, repr(u32))]
 pub enum AVChannelOrder {

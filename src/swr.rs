@@ -1,6 +1,6 @@
-use crate::AVSampleFormat;
 use crate::error::{Error, Result};
 use crate::frame::Frame;
+use crate::{AVSampleFormat, ChannelLayout};
 use libavcodec_sys::{self as sys, av_channel_layout_default};
 use std::ptr;
 
@@ -29,18 +29,18 @@ impl SwrContext {
     pub fn get_context(
         in_sample_rate: usize,
         in_sample_fmt: AVSampleFormat,
-        in_channel_count: usize,
+        in_channel_layout: ChannelLayout,
         out_sample_rate: usize,
         out_sample_fmt: AVSampleFormat,
-        out_channel_count: usize,
+        out_channel_layout: ChannelLayout,
     ) -> Result<Self> {
         Self::get_context_with_algorithm(
             in_sample_rate,
             in_sample_fmt,
-            in_channel_count,
+            in_channel_layout,
             out_sample_rate,
             out_sample_fmt,
-            out_channel_count,
+            out_channel_layout,
             ResampleAlgorithm::Cubic, // default to cubic interpolation
         )
     }
@@ -48,45 +48,26 @@ impl SwrContext {
     pub fn get_context_with_algorithm(
         in_sample_rate: usize,
         in_sample_fmt: AVSampleFormat,
-        in_channel_count: usize,
+        in_channel_layout: ChannelLayout,
         out_sample_rate: usize,
         out_sample_fmt: AVSampleFormat,
-        out_channel_count: usize,
+        out_channel_layout: ChannelLayout,
         algorithm: ResampleAlgorithm,
     ) -> Result<Self> {
-        // Create default channel layouts based on channel counts
-        let mut in_ch_layout = unsafe { std::mem::zeroed::<sys::AVChannelLayout>() };
-        let mut out_ch_layout = unsafe { std::mem::zeroed::<sys::AVChannelLayout>() };
-        
-        unsafe { av_channel_layout_default(&mut in_ch_layout, in_channel_count as i32) };
-        unsafe { av_channel_layout_default(&mut out_ch_layout, out_channel_count as i32) };
-        // // Initialize channel layouts with just channel counts
-        // in_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
-        // in_ch_layout.nb_channels = in_channel_count as i32;
-
-        // out_ch_layout.order = sys::AVChannelOrder_AV_CHANNEL_ORDER_UNSPEC;
-        // out_ch_layout.nb_channels = out_channel_count as i32;
-
         let mut inner = ptr::null_mut();
         let ret = unsafe {
             sys::swr_alloc_set_opts2(
                 &mut inner,
-                &out_ch_layout,         // out_ch_layout
+                &out_channel_layout.0,  // out_ch_layout
                 out_sample_fmt as i32,  // out_sample_fmt
                 out_sample_rate as i32, // out_sample_rate
-                &in_ch_layout,          // in_ch_layout
+                &in_channel_layout.0,   // in_ch_layout
                 in_sample_fmt as i32,   // in_sample_fmt
                 in_sample_rate as i32,  // in_sample_rate
                 0,                      // log_offset
                 ptr::null_mut(),        // log_ctx
             )
         };
-
-        // Clean up channel layouts
-        unsafe {
-            sys::av_channel_layout_uninit(&mut in_ch_layout);
-            sys::av_channel_layout_uninit(&mut out_ch_layout);
-        }
 
         if ret < 0 {
             return Err(Error::new(ret));

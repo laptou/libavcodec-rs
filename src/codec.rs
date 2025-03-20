@@ -2,6 +2,7 @@ use crate::AVCodecId;
 use crate::AVDiscard;
 use crate::AVPixelFormat;
 use crate::AVSampleFormat;
+use crate::ChannelLayout;
 use crate::Error;
 use crate::Rational;
 use crate::error::Result;
@@ -102,6 +103,10 @@ impl CodecContext {
     /// The number of audio channels.
     pub fn channel_count(&self) -> usize {
         self.as_ref().ch_layout.nb_channels as usize
+    }
+
+    pub fn channel_layout(&self) -> ChannelLayout {
+        ChannelLayout(self.as_ref().ch_layout)
     }
 
     /// The number of audio samples per channel in an audio frame.

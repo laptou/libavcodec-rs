@@ -1,4 +1,4 @@
-use crate::{AVPixelFormat, AVSampleFormat, Error, error::Result};
+use crate::{error::Result, AVPixelFormat, AVSampleFormat, ChannelLayout, Error};
 use libavcodec_sys as sys;
 use std::{ptr::NonNull, slice};
 
@@ -252,6 +252,10 @@ impl Frame {
 
     pub fn channel_count(&self) -> i32 {
         self.inner().ch_layout.nb_channels
+    }
+
+    pub fn channel_layout(&self) -> ChannelLayout {
+        ChannelLayout(self.inner().ch_layout)
     }
 
     pub fn set_pts(&mut self, pts: i64) {

@@ -1,27 +1,29 @@
+mod channel_layout;
 mod codec;
 mod constants;
 mod error;
 mod format;
 mod frame;
+mod io_context;
 mod packet;
 mod rational;
 mod stream;
 mod swr;
 mod sws;
-mod io_context;
 
+pub use channel_layout::*;
 pub use codec::*;
 pub use constants::*;
 pub use error::*;
 pub use format::*;
 pub use frame::*;
+pub use io_context::{IoContext, IoContextParams};
 pub(crate) use libavcodec_sys as sys;
 pub use packet::*;
 pub use rational::*;
 pub use stream::*;
 pub use swr::*;
 pub use sws::*;
-pub use io_context::{IoContext, IoContextParams};
 
 #[cfg(feature = "tracing")]
 mod tracing_support {
