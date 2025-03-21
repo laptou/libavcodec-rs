@@ -20,11 +20,19 @@ impl ChannelLayout {
     }
 
     pub fn order(&self) -> AVChannelOrder {
-      AVChannelOrder::from_u32(self.0.order).unwrap()
+        #[cfg(unix)]
+        {
+            AVChannelOrder::from_u32(self.0.order).unwrap()
+        }
+
+        #[cfg(windows)]
+        {
+            AVChannelOrder::from_i32(self.0.order).unwrap()
+        }
     }
 
     pub fn set_order(&mut self, order: AVChannelOrder) {
-      self.0.order = order as u32;
+        self.0.order = order as _;
     }
 
     pub fn new(channel_count: usize) -> Self {
