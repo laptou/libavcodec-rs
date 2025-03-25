@@ -53,10 +53,15 @@ impl Stream {
         self.as_ref().start_time
     }
 
-    pub fn duration(&self) -> Duration {
+    pub fn duration(&self) -> Option<Duration> {
         let time_base = self.time_base();
         let duration_ts = self.duration_ts();
-        Duration::from_secs(duration_ts as u64) * time_base.num() as u32 / time_base.den() as u32
+
+        if duration_ts < 0 {
+            return None;
+        }
+
+        Some(Duration::from_secs_f64(duration_ts as f64 * time_base.as_f64()))
     }
 
     pub fn codec_type(&self) -> AVMediaType {

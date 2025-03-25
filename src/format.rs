@@ -8,6 +8,7 @@ use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::ptr::{self, NonNull};
+use std::time::Duration;
 
 pub struct FormatContext<D = ()> {
     inner: NonNull<sys::AVFormatContext>,
@@ -88,6 +89,20 @@ impl<D> FormatContext<D> {
         streams.iter().map(|&ptr| Stream {
             inner: NonNull::new(ptr).unwrap(),
         })
+    }
+
+    pub fn stream_count(&self) -> usize {
+        self.as_ref().nb_streams as usize
+    }
+
+    pub fn duration(&self) -> Option<Duration> {
+        let duration = self.as_ref().duration;
+
+        if duration < 0 {
+            None
+        } else {
+            Some(Duration::from_micros(duration as u64))
+        }
     }
 
     pub fn read_packet(&mut self, packet: &mut Packet) -> Result<bool> {
@@ -282,6 +297,13 @@ impl<D> FormatContext<D> {
             if ret < 0 {
                 // this method consumes self b/c if avformat_open_input fails,
                 // it frees the context!
+                return Err(Error::new(ret));
+            }
+
+            let ret = sys::avformat_find_stream_info(ctx_ptr, ptr::null_mut());
+
+            if ret < 0 {
+                sys::avformat_close_input(&mut ctx_ptr);
                 return Err(Error::new(ret));
             }
 

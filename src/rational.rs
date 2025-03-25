@@ -38,3 +38,9 @@ impl Into<sys::AVRational> for Rational {
         self.inner
     }
 }
+
+impl Into<f64> for Rational {
+    fn into(self) -> f64 {
+        self.as_f64()
+    }
+}
